@@ -21,7 +21,7 @@ Currently only Linux operating systems are supported.
 ## Configuration
 Edit JSON configuration file app-options.json.
 Options are:
- * HTTPport: Port that application will listen to. You will connect to this port with your web browser. 8080 by default.
+ * HTTPport: Port that application will listen on. You will connect to this port with your web browser. 30450 by default.
  * APP_SESSION_FS_SECRET: This is the secret string for local session storage files, set it to something random.
  * APP_SESSION_SECRET: This is the another secret string for browser session cookies, set it to something random.
  * SUBNET: This is your subnet with network mask. 192.168.1.0/24 by default.
@@ -37,8 +37,8 @@ Options are:
 1. To run the app in the command line:
 `node app.js`
 2. Wait until application will start the http service, then connect your web browser to the app:
-http://your-host:8080/
-where 8080 is the port set in the appOptions.json configuration file
+http://your-host:30450/
+where 30450 is the port set in the appOptions.json configuration file
 
 Alternatively you can create a *systemd* startup script, but make sure to cd to the application folder first before running node executable.
 

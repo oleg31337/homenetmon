@@ -103,7 +103,6 @@ dist
 # TernJS port file
 .tern-port
 
-app-options.json
 node_modules/
 globalhosts.json
 globalhosts.bak.json

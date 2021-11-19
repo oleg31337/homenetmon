@@ -11,7 +11,7 @@ Full stack Node.js/JavaScript application that scans and shows your local networ
 
 ## Installation
 Currently only Linux operating systems are supported.
-1. Install node.js (versions 12 or newer are supported)
+1. Install node.js (versions 12 dn 14 are supported, version 16+ have breaking changes and are not yet supported)
 2. Install nmap from your Linux package repository
 3. Git clone the app from here https://github.com/oleg31337/homenetmon
 4. Run "`npm install`" to install required node modules

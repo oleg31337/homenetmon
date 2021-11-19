@@ -5,7 +5,7 @@ const http = require('http');
 const express = require('express');
 const session = require('express-session');
 const fileStore = require('session-file-store')(session); // express session file based store
-const ping = require ("net-ping");
+const ping = require ("ping");
 const parseString = require('xml2js').parseString;
 const CronJob = require('cron').CronJob;
 
@@ -23,6 +23,7 @@ const fileStoreOptions = { // session file store options.
 
 var localip=[]; //array of local ip addresses
 var localmac=[]; // array of corresponding local mac addresses
+var localsubnet=[]; // array of corresponding subnets
 var globalhosts={}; // in-memory list of all hosts
 var globallastscan={};// in-memory last scan stats
 var globalarptable={}; // in-memory arp table
@@ -60,6 +61,23 @@ function findinArray(arr,strng){
     return -1;
 }
 
+function ip2int(ip)
+{
+    var d = ip.split('.');
+    return ((((((+d[0])*256)+(+d[1]))*256)+(+d[2]))*256)+(+d[3]);
+}
+
+function int2ip(num)
+{
+    var ip = num%256;
+    for (var i = 3; i > 0; i--)
+    {
+        num = Math.floor(num/256);
+        ip = num%256 + '.' + ip;
+    }
+    return ip;
+}
+
 function validateIP(ipaddress) { //validate ip address with/without netmask
   if (/^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\/(0?[8-9]|[1-2][0-9]|3[0-2])){0,1}$/.test(ipaddress)) {
     return (true);
@@ -79,31 +97,34 @@ app.post('/api/ping', (req, res, next) => {
   }
 });  
 
-function pingHost(ip,callback) {
+function pingHost(ipaddr,callback) {
   var options = {
-    networkProtocol: ping.NetworkProtocol.IPv4,
-    packetSize: 16,
-    retries: 1,
-    sessionId: (Math.floor(Math.random() * 65535) + 1), //random session id to enable parallel ping calls
-    timeout: 3000,
-    ttl: 128
+    timeout: 3
   };
-  var session = ping.createSession (options);
-  session.pingHost (ip, function (error,ipaddr,sent,rcvd) {
-    if (error){
-      appLogger.debug(ipaddr + ": " + error);
-      if (typeof(globalarptable[ipaddr])!='undefined') globalhosts[globalarptable[ipaddr]].latency=-1;
-      if (typeof(callback)=='function') callback(ipaddr,-1);
-      return;
-    }
-    else {
-      appLogger.debug(ipaddr + ": Alive");
-      if (typeof(globalarptable[ipaddr])!='undefined') globalhosts[globalarptable[ipaddr]].latency=rcvd-sent;
-      if (typeof(callback)=='function') callback(ipaddr,(rcvd-sent));
-      return;
-    }
-  });
+  try {
+    ping.sys.probe(ipaddr, function (isAlive) {
+      if (!isAlive){
+        appLogger.debug(ipaddr + ": Unreachable");
+        if (typeof(globalarptable[ipaddr])!='undefined') globalhosts[globalarptable[ipaddr]].latency=-1;
+        if (typeof(callback)=='function') callback(ipaddr,-1);
+        return;
+      }
+      else {
+        appLogger.debug(ipaddr + ": Alive");
+        if (typeof(globalarptable[ipaddr])!='undefined') globalhosts[globalarptable[ipaddr]].latency=1;
+        if (typeof(callback)=='function') callback(ipaddr,1);
+        return;
+      }
+    },options);
+  }
+  catch (err){
+    appLogger.debug('Error pinging '+ipaddr +': '+ err);
+    if (typeof(globalarptable[ipaddr])!='undefined') globalhosts[globalarptable[ipaddr]].latency=-1;
+    if (typeof(callback)=='function') callback(ipaddr,-1);
+    return;
+  }
 }
+
 
 app.get('/api/gethosts', (req, res, next) => {
   if (Object.keys(globalhosts).length>0){
@@ -298,6 +319,7 @@ function portScan(ipaddr,type,callback){
   // else if (typeof(callback)=='function') callback(ipaddr,false);
 // }
 
+
 function parseNmapOut(data){
   var parsedhosts={hosts:{},stats:{}};
   if (typeof (data.nmaprun.host) !='undefined'){
@@ -381,14 +403,18 @@ function getLocalIP(){
   for (var e=0;e<Object.keys(interfaces).length;e++){ //extract local interfaces ip and mac addresses
     //console.log(JSON.stringify(interfaces[Object.keys(interfaces)[e]]));
     for (var k=0; k<interfaces[Object.keys(interfaces)[e]].length;k++){
-      if (!interfaces[Object.keys(interfaces)[e]][k].internal){ //&& interfaces[Object.keys(interfaces)[e]][k].family=='IPv4'
+      if (!interfaces[Object.keys(interfaces)[e]][k].internal && interfaces[Object.keys(interfaces)[e]][k].family=='IPv4'){
         localip.push(interfaces[Object.keys(interfaces)[e]][k].address);
         localmac.push(interfaces[Object.keys(interfaces)[e]][k].mac);
+        var netmaskbits=interfaces[Object.keys(interfaces)[e]][k].cidr.split('/')[1]
+        localsubnet.push(int2ip(ip2int(interfaces[Object.keys(interfaces)[e]][k].address)>>>(32-netmaskbits)<<(32-netmaskbits)>>>0)+'/'+netmaskbits); 
       }
     }
   }
   appLogger.debug('Local IP: '+localip);
   appLogger.debug('Local MAC: '+localmac);
+  appLogger.debug('Local subnet: '+localsubnet);
+
 }
 
 function saveGlobalhosts(callback){

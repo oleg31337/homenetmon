@@ -11,18 +11,19 @@ Full stack Node.js/JavaScript application that scans and shows your local networ
 
 ## Installation
 Currently only Linux operating systems are supported.
-1. Install node.js version 14 or 16 (So far tested on versions 14 and 16)
-2. Install nmap from your Linux package repository
+1. Install node.js version 14 or 16 (So far tested on versions 14 and 16) https://nodejs.org/en/download/package-manager/
+2. Install nmap from your Linux package repository (e.g. `apt -y install nmap`)
 3. Git clone the app from here https://github.com/oleg31337/homenetmon to a folder on local drive, for example /opt/homenetmon
-4. Get into the application folder and run "`npm install`" to install required node modules
-5. Run as root the `set_permissions.sh` script to grant permissions for nmap and node to bind to network sockets
+   For example: `git clone https://github.com/oleg31337/homenetmon homenetmon`
+4. Go into the application folder and run "`npm install`" to install required node modules
+5. Run as root the `set_permissions.sh` script to grant permissions for nmap and node.js to allow binding to network sockets
 
 ### Install as a systemd service
-1. Run script `install_service.sh` and follow prompts to create service user account/group.
+1. Run script `sudo install_service.sh` and follow prompts. You can run the service as your user account, or script can create a service account.
 2. Make sure that the service account owns the application folder, otherwise it won't start.
 
 ### Uninstall systemd service
-1. Run script `install_service.sh -u` to uninstall the service
+1. Run script `sudo install_service.sh -u` to uninstall the service. This will stop the app and remove the systemd service.
 
 ## Configuration
 Application configuration file app-options.json is created automatically on the first start of the application

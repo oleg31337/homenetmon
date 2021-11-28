@@ -54,8 +54,10 @@ where 30450 is the port set in the appOptions.json configuration file
 1. Run application in the command line:
 `npm run debug`
 
-Alternatively you can create a *systemd* startup script, but make sure to cd to the application folder first before running node executable.
-
+## Application data
 Application stores the hosts and status information in the plain text files in JSON format.
 Files are called: `globalhosts.json` and `globallastscan.json`.
 If application is restarted, it will try to read those files into memory and if files are not found it will run the full network scan.
+
+## Application logs
+By default all logs are printed to stdout. When app is running as a systemd service, the log is recorded by systemd journal.

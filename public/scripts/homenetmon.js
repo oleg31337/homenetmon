@@ -366,7 +366,7 @@ function requestRescan(macaddr,ipaddr){
       return;
     }
   });
-  globalsetinterval[macaddr]=setTimeout(function(){ requestUpdate((macaddr.toString()),(ipaddr.toString())); }, 1000);
+  if (ipaddr !='subnet') globalsetinterval[macaddr]=setTimeout(function(){ requestUpdate((macaddr.toString()),(ipaddr.toString())); }, 1000);
 }
 
 /* function requestPing(ipaddr){

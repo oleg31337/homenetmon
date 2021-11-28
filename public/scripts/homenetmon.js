@@ -61,6 +61,24 @@ function setClipboard(value,elem) { //function to copy specified text to clipboa
     setTimeout(function(){elem.parentElement.setAttribute("data-tooltip","Copy");},1000);
 }
 
+function download(data, filename, type) {
+    var file = new Blob([data], {type: type});
+    if (window.navigator.msSaveOrOpenBlob) // IE10+
+        window.navigator.msSaveOrOpenBlob(file, filename);
+    else { // Others
+        var a = document.createElement("a"),
+                url = URL.createObjectURL(file);
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function() {
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);  
+        }, 0); 
+    }
+}
+
 function filterTable() { // function to filter table
   var input = document.getElementById("TableFilter"); //input filter in the menu bar
   var filter = input.value.toUpperCase(); // we perform case insensitive filtering
@@ -116,12 +134,14 @@ function generateMenu(){ // build menu with accounts and regions
     inputfiltervalue = document.getElementById("TableFilter").value; //get the value of input filter in the menu bar
   }
   var menuitems='<div class="ui inverted top attached menu">\
-  <a class="ui item" onclick="requestRescan(\'subnet\')"><i class="globe icon"></i>Rescan network</a>\
+  <a class="ui item" onclick="requestRescan(false,\'subnet\')"><i class="globe icon"></i>Rescan network</a>\
   <a class="ui item" onclick="displayScanStats()"><i class="info circle icon"></i>Last scan info</a>\
   <div class="right menu">\
   <div class="ui inverted transparent left icon input"><i class="filter icon"></i><input id="TableFilter" type="text" placeholder="Filter..." onkeyup="filterTable()" onpaste="filterTable()" value="'+inputfiltervalue+'"></div>\
   <a class="ui item" onclick="document.getElementById(\'TableFilter\').value=\'\';filterTable()"><i class="trash alternate outline icon"></i>Clear<br/>filter</a>\
-  <a class="ui item" onclick="refreshTable()"><i class="sync alternate icon"></i>Refresh</a>\
+  <a class="ui disabled item" onclick=""></a>\
+  <a class="ui item" onclick="settingsDialog()"><i class="settings icon"></i>Settings</a>\
+  <a class="ui item" onclick="refreshTable()"><i class="sync alternate icon"></i>Refresh table</a>\
   </div></div>'
   document.getElementById('MainMenu').innerHTML=menuitems;
   refreshTable();
@@ -164,8 +184,8 @@ function generateTable(tabledata) { // create instances table contents
       clearTimeout(globalsetinterval[macaddr]);
       delete globalsetinterval[macaddr];
     };
-    globalsetinterval[macaddr]=setTimeout(function(){ requestUpdate((macaddr.toString())); }, 60000-Math.floor(Math.random() * 2001));
-    setTimeout(function(){ requestPing(ipaddr); },5100-Math.floor(Math.random() * 5001));
+    globalsetinterval[macaddr]=setTimeout(function(){ requestUpdate((macaddr.toString()),(ipaddr.toString())); }, 60000-Math.floor(Math.random() * 2001));
+    setTimeout(function(){ requestUpdate(macaddr,ipaddr); },5100-Math.floor(Math.random() * 5001));
     //console.log(typeof(globalsetinterval[j]));
     //console.log(globalsetinterval[j]);
   }
@@ -195,6 +215,7 @@ function updateTableRow(host,callback){
   }
   var portslist=''; // generate list of ports
   if (host.ports!='nodata'){
+    
     var ports_tcp=[];
     var ports_udp=[];
     for (var j=0;j<host.ports.length;j++){
@@ -218,11 +239,22 @@ function updateTableRow(host,callback){
       portslist+='</br>UDP:&nbsp;'+ports_udp.join(", ");
     }
   }
+  else {
+    avail_color="gray";
+    portslist='<div class="ui inline active inline loader"></div>&nbsp;&nbsp;&nbsp;Scanning is in progress';
+  }
+  if (portslist.length<3){
+    portslist='No open ports or scanning error. Try to rescan.';
+  }
+  if (host.scanning){
+    avail_color="gray";
+    portslist='<div class="ui inline active inline loader"></div>&nbsp;&nbsp;&nbsp;Scanning is in progress';
+  }
   //now generate main table
   var out='<td data-sort-value="'+ip2int(host.ipaddr)+'" textvalue="'+host.ipaddr+'"><div class="ui medium label '+avail_color+'">'+host.ipaddr+'</div>&nbsp;\
   &nbsp;<span class="ui" data-tooltip="Copy" data-variation="mini" data-inverted=""><i class="ui copy outline icon link" onclick="setClipboard(\''+host.ipaddr+'\',this)"></i></span>\
-  &nbsp;<span class="ui" data-tooltip="Rescan" data-variation="mini" data-inverted=""><i class="ui sync alternate icon link" onclick="requestRescan(\''+host.ipaddr+'\')"></i></span>\
-  &nbsp;<span class="ui" data-tooltip="Ping" data-variation="mini" data-inverted=""><i class="ui heartbeat alternate icon link" onclick="requestPing(\''+host.ipaddr+'\')"></i></span>\
+  &nbsp;<span class="ui" data-tooltip="Rescan" data-variation="mini" data-inverted=""><i class="ui sync alternate icon link" onclick="requestRescan(\''+mac+'\',\''+host.ipaddr+'\')"></i></span>\
+  &nbsp;<span class="ui" data-tooltip="Ping" data-variation="mini" data-inverted=""><i class="ui heartbeat alternate icon link" onclick="requestUpdate(\''+mac+'\',\''+host.ipaddr+'\')"></i></span>\
   &nbsp;<span class="ui" data-tooltip="Delete" data-variation="mini" data-inverted=""><i class="ui x icon link" onclick="confirmDelete(\''+mac+'\',\''+host.ipaddr+'\')"></i></span>\
   </td>';
   var datasortdnsname = host.dnsnames.toString().trim();
@@ -270,17 +302,18 @@ async function postData(url = '', data = {}) {
   return response.json();
 }
 
-function requestUpdate(macaddr){
+function requestUpdate(macaddr,ipaddr){
   console.log('requestUpdate');
   if (typeof (globalsetinterval[macaddr]) == 'number') {
     clearTimeout(globalsetinterval[macaddr]);
     delete globalsetinterval[macaddr];
   };
+  document.getElementById(ipaddr).getElementsByClassName("ui medium label")[0].className="ui medium label gray";
   //console.log(mac,name);
   fetch("api/gethost?mac="+macaddr)
     .then(resp=>resp.json()).then(data=>{
       updateTableRow(data);
-      globalsetinterval[macaddr]=setTimeout(function(){ requestUpdate((macaddr.toString())); }, 60000-Math.floor(Math.random() * 2001));
+      globalsetinterval[macaddr]=setTimeout(function(){ requestUpdate((macaddr.toString()),(ipaddr.toString())); }, 60000-Math.floor(Math.random() * 2001));
     });
 }
 
@@ -310,11 +343,15 @@ function requestDelete(macaddr,ipaddr){
   });
 }
 
-function requestRescan(ipaddr){
+function requestRescan(macaddr,ipaddr){
   console.log('requestRescan');
   if (ipaddr !='subnet'){
-    document.getElementById(ipaddr).children[5].innerHTML='<div class="ui inline active loader"></div>'
+    document.getElementById(ipaddr).children[5].innerHTML='<div class="ui inline active inline loader"></div>&nbsp;&nbsp;&nbsp;Scanning is in progress'
     document.getElementById(ipaddr).getElementsByClassName("ui medium label")[0].className="ui medium label gray";
+    if (typeof (globalsetinterval[macaddr]) == 'number') {
+      clearTimeout(globalsetinterval[macaddr]);
+      delete globalsetinterval[macaddr];
+    };
   }
   //console.log(mac,name);
   postData('api/nmapscan',{'ip':ipaddr}).then (data => {
@@ -322,15 +359,17 @@ function requestRescan(ipaddr){
     if (typeof(data.msg) !='undefined'){
       //console.log(data.msg)
       if (ipaddr =='subnet') responseDialog(data.msg,undefined);
-      else updateTableRow(data.msg[Object.keys(data.msg)[0]]);
     }
     else {
       responseDialog(undefined,data.err);
+      requestUpdate(macaddr,ipaddr);
+      return;
     }
   });
+  globalsetinterval[macaddr]=setTimeout(function(){ requestUpdate((macaddr.toString()),(ipaddr.toString())); }, 1000);
 }
 
-function requestPing(ipaddr){
+/* function requestPing(ipaddr){
   console.log('requestPing');
   if (typeof ipaddr =='undefined'){return;}
   document.getElementById(ipaddr).getElementsByClassName("ui medium label")[0].className="ui medium label gray";
@@ -343,7 +382,7 @@ function requestPing(ipaddr){
       document.getElementById(ipaddr).getElementsByClassName("ui medium label")[0].className="ui medium label red";
     }
   });
-}
+} */
 
 function confirmDialog(title,question,funct){ // confirmation dialog
     document.getElementById('modal_contents').setAttribute("class", "ui mini modal");
@@ -355,6 +394,7 @@ function confirmDialog(title,question,funct){ // confirmation dialog
           <div class="ui green ok button" onclick="'+funct+'">Yes</div>\
           <div class="ui red deny button">Cancel</div>\
         </div>';
+    $('.ui.mini.modal').modal('setting', 'closable', true);
     $('.ui.mini.modal').modal('show');
 }
 function responseDialog(message,error){ // response and error dialog
@@ -373,6 +413,7 @@ function responseDialog(message,error){ // response and error dialog
       <div class="ui green ok button">OK</div>\
     </div>';
   }
+  $('.ui.mini.modal').modal('setting', 'closable', true);
   $('.ui.mini.modal').modal('show');
 }
 
@@ -397,7 +438,130 @@ function displayScanStats(){ // show last scan stats
       document.getElementById('modal_contents').innerHTML=contents;
     });
   document.getElementById('modal_contents').innerHTML=activedimmer+'</br><div class="actions"><div class="ui black deny right button">Close</div></div>;';
+  $('.ui.large.modal').modal('setting', 'closable', true);
   $('.ui.large.modal').modal('show');
+}
+
+function settingsDialog(){ // show settings dialog
+  document.getElementById('modal_contents').setAttribute("class", "ui tiny modal");
+  document.getElementById('modal_contents').setAttribute("style", "background-color:#4d4d4d; color:#f2f2f2");
+  fetch("api/getsettings")
+    .then(resp=>resp.json())
+    .then(settings=>{
+      console.log(settings);
+      var subnet=settings.subnet ? settings.subnet : '192.168.1.0';
+      var netmask=settings.netmask ? settings.netmask : '24';
+      var speed=settings.speed ? settings.speed : 5;
+      var ports=settings.ports ? settings.ports : 'known';
+      var cronexpr=settings.cronexpr ? settings.cronexpr : '0 3 * * *';
+      var cronenable=settings.cronenable ? settings.cronenable : false;
+      var contents='<div class="ui header" style="background-color:#4d4d4d; color:#f2f2f2"><i class="settings icon"></i>&nbsp;Settings</div>\
+        <div class="content" style="background-color:#4d4d4d; color:#f2f2f2">\
+          <form class="ui form segment" action="/api/savesettings" method="post" style="background-color:#4d4d4d; color:#f2f2f2">\
+            <div class="two fields">\
+              <div class="field">\
+                <label style="color:#f2f2f2">Subnet address</label>\
+                <input type="text" id="input_subnet" placeholder="192.168.1.0" name="subnet">\
+              </div>\
+              <div class="field">\
+                <label style="color:#f2f2f2">Netmask</label>\
+                <input type="text" id="input_netmask" placeholder="24 or 255.255.255.0" name="netmask">\
+              </div>\
+            </div>\
+            <div class="two fields">\
+                <div class="field">\
+                <label style="color:#f2f2f2">Scan speed</label>\
+                <select class="ui fluid dropdown" id="select_speed" name="speed">\
+                  <option value="5">5 Lightning fast (may skip ports)</option>\
+                  <option value="4">4 Faster (might skip ports)</option>\
+                  <option value="3">3 Thorough (steady)</option>\
+                  <option value="2">2 Very slow (extreme)</option>\
+                  <option value="1">1 Eternal (insanely slow)</option>\
+                </select>\
+                </div>\
+                <div class="field">\
+                <label style="color:#f2f2f2">Number of ports</label>\
+                <select class="ui fluid dropdown" id="select_ports" name="ports">\
+                  <option value="100">100 ports (fastest)</option>\
+                  <option value="1000">1000 ports (fast)</option>\
+                  <option value="1500">1500 ports (moderate)</option>\
+                  <option value="2000">2000 ports (slower)</option>\
+                  <option value="5000">5000 ports (slow)</option>\
+                  <option value="10000">10000 ports (very slow)</option>\
+                  <option value="65535">All 65535 ports (insanely slow)</option>\
+                </select>\
+                </div>\
+            </div>\
+            <div class="field">\
+                <div class="field">\
+                  <label style="color:#f2f2f2">Scheduled scan time</label>\
+                  <input type="text" id="input_cron" placeholder="0 0 * * *" name="cronexpr">\
+                  <label style="color:#f2f2f2">(Cron expression: minute hour day month weekday)</label>\
+                </div>\
+            </div>\
+            <div class="field">\
+              <div class="field">\
+              <div class="ui toggle checkbox">\
+                <input type="checkbox" tabindex="0" id="checkbox_cron" checked=true name="cronenable">\
+                <label style="color:#f2f2f2 !important">Enable scheduled scan</label>\
+              </div>\
+              </div>\
+            </div>\
+          </form>\
+        </div>\
+        <div class="ui actions"  style="background-color:#4d4d4d; color:#f2f2f2">\
+          <div class="ui green button" onclick="submitForm()">Apply</div>\
+          <div class="ui red cancel button">Cancel</div>\
+        </div>';
+      document.getElementById('modal_contents').innerHTML=contents;
+      activateForm();
+      document.getElementById('input_subnet').value=subnet;
+      document.getElementById('input_netmask').value=netmask;
+      document.getElementById('select_speed').value=speed;
+      document.getElementById('select_ports').value=ports;
+      document.getElementById('input_cron').value=cronexpr;
+      document.getElementById('checkbox_cron').checked=cronenable;
+    });
+  document.getElementById('modal_contents').innerHTML=activedimmer+'</br><div class="actions"><div class="ui black deny right button">Close</div></div>;';
+  $('.ui.tiny.modal').modal('setting', 'closable', false);
+  $('.ui.tiny.modal').modal('show');
+}
+function activateForm() {
+    //console.warn('activateForm');
+    $('.ui.form').form({
+    on: 'blur',
+    inline: true,
+    fields: {
+      cronexpr:{
+      identifier: 'cronexpr',
+      rules: [{
+        type: 'regExp',
+        value: /^((((\d+,)+\d+|(\d+(\/|-)\d+)|\d+|\*) ?){5})$/,
+        prompt: 'Please enter a valid cron expression'
+      }]
+      },
+      subnet:{
+      identifier: 'subnet',
+      rules: [{
+        type: 'regExp',
+        value: /^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?))$/,
+        prompt: 'Please enter a valid subnet address'
+      }]
+      },
+      netmask:{
+      identifier: 'netmask',
+      rules: [{
+        type: 'regExp',
+        value: /(^([8-9]|0[8-9]|[1-2][0-9]|3[0-2])$)|(^(((255\.){3}(255|254|252|248|240|224|192|128|0+))|((255\.){2}(255|254|252|248|240|224|192|128|0+)\.0)|((255\.)(255|254|252|248|240|224|192|128|0+)(\.0+){2})|((255|254|252|248|240|224|192|128|0+)(\.0+){3}))$)/,
+        prompt: 'Please enter a valid netmask'
+      }]
+      }
+    }
+    });
+}
+function submitForm(){
+  console.log('submitForm');
+  $('.ui.form.segment').form('submit');
 }
 
 function appInit() { // main app that is called from the html page to initialize the frontend app

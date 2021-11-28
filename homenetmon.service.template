@@ -1,0 +1,16 @@
+[Unit]
+Description=Home network scanner and monitor dashboard
+Documentation=https://github.com/oleg31337/homenetmon
+After=network.target
+
+[Service]
+Type=simple
+User={{SERVICEACCOUNT}}
+Group={{SERVICEGROUP}}
+WorkingDirectory={{HOMENETMONPATH}}
+ExecStartPre=+{{HOMENETMONPATH}}/set_permissions.sh
+ExecStart={{HOMENETMONPATH}}/homenetmon.sh
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

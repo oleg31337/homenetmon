@@ -13,32 +13,46 @@ Full stack Node.js/JavaScript application that scans and shows your local networ
 Currently only Linux operating systems are supported.
 1. Install node.js version 14 or 16 (So far tested on versions 14 and 16)
 2. Install nmap from your Linux package repository
-3. Git clone the app from here https://github.com/oleg31337/homenetmon
-4. Run "`npm install`" to install required node modules
-5. Run as root the `set_permissions.sh` script to grant permissions to nmap and node to bind to network sockets
-6. Add the `set_permissions.sh` script to your system startup as the setcap settings get reset after restart
+3. Git clone the app from here https://github.com/oleg31337/homenetmon to a folder on local drive, for example /opt/homenetmon
+4. Get into the application folder and run "`npm install`" to install required node modules
+5. Run as root the `set_permissions.sh` script to grant permissions for nmap and node to bind to network sockets
+
+### Install as a systemd service
+1. Run script `install_service.sh` and follow prompts to create service user account/group.
+2. Make sure that the service account owns the application folder, otherwise it won't start.
+
+### Uninstall systemd service
+1. Run script `install_service.sh -u` to uninstall the service
 
 ## Configuration
-Edit JSON configuration file app-options.json.
-Options are:
- * HTTPport: Port that application will listen on. You will connect to this port with your web browser. 30450 by default.
- * APP_SESSION_FS_SECRET: This is the secret string for local session storage files, set it to something random.
- * APP_SESSION_SECRET: This is the another secret string for browser session cookies, set it to something random.
- * SUBNET: This is your subnet with network mask. 192.168.1.0/24 by default.
+Application configuration file app-options.json is created automatically on the first start of the application
+**Note:** You need to stop the application before editing the configuration file.
+
+Available options are:
+ * HTTPport: Port that application will listen on. You will connect to this port with your web browser. 30450 is used by default.
+ * APP_SESSION_FS_SECRET: This is the secret string for local session storage files, random string.
+ * APP_SESSION_SECRET: This is the another secret string for browser session cookies, random string.
+ * SUBNET: This is your subnet with network mask. e.g. 192.168.1.0/24. Application will try to guess your subnet on the first start.
+ * NMAP_SPEED: This is the speed of nmap scanning. Valid options from 1 (slow) to 5 (fast). Fastest may skip some slow ports.
+ * NMAP_PORTS: This is the number of ports that will be scanned. Top n ports from the popular ports list of nmap application https://nmap.org/book/nmap-services.html
+   By default top 1000 ports from the list will be used.
  * NMAP_CMD_SCAN: This is nmap command line to run for full network scan. Do not change unless you know what you are doing. Consult nmap documentation.
  * NMAP_CMD_SWEEP: This is nmap command line to run for quick network swipe. Do not change unless you know what you are doing. Consult nmap documentation.
  * NMAP_CRON: This is the CRON expression for scheduled full network scans. https://en.wikipedia.org/wiki/Cron
    by default it will run at 3:30 AM every day - "30 03 * * *"
- * DEBUG": This is to enable debugging of the backend application. You will get more logs in the command line.
+ * NMAP_CRON_ENABLE: This is the true/false parameter whether to schedule regular full network scans
 
-**Note:** If you change the configuration file you have to restart the application.
+**Note:** Subnet address, Nmap parameters and Cron expression can be set from the application web page.
 
-## Running
+## Running the application
 1. To run the app in the command line:
-`node app.js`
-2. Wait until application will start the http service, then connect your web browser to the app:
-http://your-host:30450/
+`npm start`
+2. Wait until application will start the http service, then open your browser and navigate to: http://your-host:30450/
 where 30450 is the port set in the appOptions.json configuration file
+
+### Running in debugging mode:
+1. Run application in the command line:
+`npm run debug`
 
 Alternatively you can create a *systemd* startup script, but make sure to cd to the application folder first before running node executable.
 

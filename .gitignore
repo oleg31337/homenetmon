@@ -107,3 +107,6 @@ node_modules/
 globalhosts.json
 globalhosts.bak.json
 globallastscan.json
+app-options.json
+homenetmon.service
+/app-options.json

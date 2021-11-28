@@ -362,7 +362,7 @@ function requestRescan(macaddr,ipaddr){
     }
     else {
       responseDialog(undefined,data.err);
-      requestUpdate(macaddr,ipaddr);
+      if (ipaddr !='subnet') requestUpdate(macaddr,ipaddr);
       return;
     }
   });

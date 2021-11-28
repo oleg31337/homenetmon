@@ -45,14 +45,14 @@ Available options are:
 
 **Note:** Subnet address, Nmap parameters and Cron expression can be set from the application web page.
 
-## Running the application
-1. To run the app in the command line:
+## Running the application in the command prompt
+1. To run the app in the command prompt:
 `npm start`
 2. Wait until application will start the http service, then open your browser and navigate to: http://your-host:30450/
 where 30450 is the port set in the appOptions.json configuration file
 
 ### Running in debugging mode:
-1. Run application in the command line:
+1. Run application in the command prompt:
 `npm run debug`
 
 ## Application data

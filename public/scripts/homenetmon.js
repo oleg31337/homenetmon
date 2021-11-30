@@ -240,14 +240,14 @@ function updateTableRow(host,callback){
     }
   }
   else {
-    avail_color="gray";
+    //avail_color="gray";
     portslist='<div class="ui inline active inline loader"></div>&nbsp;&nbsp;&nbsp;Scanning is in progress';
   }
   if (portslist.length<3){
     portslist='No open ports or scanning error. Try to rescan.';
   }
   if (host.scanning){
-    avail_color="gray";
+    //vail_color="gray";
     portslist='<div class="ui inline active inline loader"></div>&nbsp;&nbsp;&nbsp;Scanning is in progress';
   }
   //now generate main table
@@ -347,7 +347,7 @@ function requestRescan(macaddr,ipaddr){
   console.log('requestRescan');
   if (ipaddr !='subnet'){
     document.getElementById(ipaddr).children[5].innerHTML='<div class="ui inline active inline loader"></div>&nbsp;&nbsp;&nbsp;Scanning is in progress'
-    document.getElementById(ipaddr).getElementsByClassName("ui medium label")[0].className="ui medium label gray";
+    //document.getElementById(ipaddr).getElementsByClassName("ui medium label")[0].className="ui medium label gray";
     if (typeof (globalsetinterval[macaddr]) == 'number') {
       clearTimeout(globalsetinterval[macaddr]);
       delete globalsetinterval[macaddr];

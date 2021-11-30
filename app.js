@@ -355,7 +355,7 @@ function portScan(ipaddr,type,callback){
         //console.log(parsedhosts);
       });
       
-    });
+    },{maxBuffer: 10485760, timeout: 86400000}); // 10mb buffer and 24 hour timout
     globalnmappid=nmaprun.pid;
     appLogger.debug('Nmap started with pid: '+nmaprun.pid);
   }

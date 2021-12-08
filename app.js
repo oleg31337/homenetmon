@@ -206,7 +206,7 @@ app.post('/api/savesettings', (req, res, next) => { //////////////////////NEED T
     }
     else if (nmapCron){
       nmapCron.stop();
-      appLogger.log('Cancelling scheduled network scan');
+      appLogger.log('Disabling scheduled network scan');
     }
     else appLogger.error('Error: Cron is not properly initialized!');
     //console.log(appOptions);
@@ -242,7 +242,7 @@ app.post('/api/nmapscan', (req, res, next) => {
       if (globalarptable[req.body.ip]){
         globalhosts[globalarptable[req.body.ip]].scanning=true; //set host in scanning mode (if found in arp table of course)
       }
-      portScan(req.body.ip, req.body.type,);
+      portScan(req.body.ip, req.body.type);
       return res.status(200).type('application/json').send('{"msg":["Host scan started","It will take some time to complete"]}').end;
     }
     else {
@@ -303,34 +303,34 @@ function updateArp(ipaddr,macaddr) {
 }
 
 function portScan(ipaddr,type,callback){
-  //console.log('portscan: '+ipaddr);
-  var scantype='host';
+  var scanscope='host'; // single host scope by default
   const { exec } = require("child_process");
-  var nmapcmd=appOptions.NMAP_CMD_SCAN // full scan by default
+  var nmapcmd=appOptions.NMAP_CMD_SCAN // full portscan by default
   if (appOptions.NMAP_SPEED){
     nmapcmd+=' -T'+appOptions.NMAP_SPEED;
   }
   if (appOptions.NMAP_PORTS){
     nmapcmd+=' --top-ports '+appOptions.NMAP_PORTS;
   }
-  if (typeof(type)!='undefined' && type=='fast') {
-    nmapcmd=appOptions.NMAP_CMD_SWEEP; //fast scan
+  if (typeof(type)!='undefined' && type=='discovery') { //fast host discovery scan
+    nmapcmd=appOptions.NMAP_CMD_SWEEP;
+    appLogger.debug('Starting fast network swipe of '+ipaddr);
   }
-  else type='subnet'; //full subnet scan by default
+  else type='portscan'; //portscan by default
   if (typeof(ipaddr) != 'undefined' && ipaddr=='subnet'){
     ipaddr=appOptions.SUBNET;
-    scantype='subnet';
-    appLogger.log('Starting on-demand full network scan');
+    scanscope='subnet';
+    appLogger.log('Starting on-demand full subnet network scan');
   }
   if (typeof(ipaddr) != 'undefined'){
-    var nmaprun = exec(nmapcmd+' '+ipaddr, (error, stdout, stderr) => {
+    var nmaprun = exec(nmapcmd+' '+ipaddr, {maxBuffer: 10485760, timeout: 86400000}, (error, stdout, stderr) => {
       if (error) {
-        appLogger.error('Error: '+error.message);
+        appLogger.error('Error Nmap: '+error.message);
         if (typeof(callback)=='function') callback(ipaddr,false,error.message.toString());
         return;
       }
       if (stderr) {
-        appLogger.error('Error: '+stderr);
+        appLogger.error('Error Nmap: '+stderr);
         if (typeof(callback)=='function') callback(ipaddr,false,stderr.toString());
         return;
       }
@@ -343,10 +343,11 @@ function portScan(ipaddr,type,callback){
         }
         //console.dir(result);
         result.scantype=type;
+        result.scanscope=scanscope;
         var parsedhosts=parseNmapOut(result);
         saveGlobalhosts();
         updateArp();
-        if (scantype=='subnet'){
+        if (scanscope=='subnet'){
           globallastscan=JSON.parse(JSON.stringify(parsedhosts.stats)); //update globallastscan var
           saveLastscan(globallastscan); //save globallastscan
           appLogger.log('Full on-demand network scan is complete');
@@ -355,7 +356,7 @@ function portScan(ipaddr,type,callback){
         //console.log(parsedhosts);
       });
       
-    },{maxBuffer: 10485760, timeout: 86400000}); // 10mb buffer and 24 hour timout
+    }); // 50mb buffer and 24 hour timout
     globalnmappid=nmaprun.pid;
     appLogger.debug('Nmap started with pid: '+nmaprun.pid);
   }
@@ -397,7 +398,7 @@ function parseNmapOut(data){
       if (netbiosname=='<unknown>') netbiosname='';
       var vendor = hosts[i].address[1] ? hosts[i].address[1].p.vendor : 'unknown';
       var ports=[];
-      if (data.scantype!='fast') {
+      if (data.scantype!='discovery') {
         if (typeof(hosts[i].ports) != 'undefined' && typeof(hosts[i].ports[0].port) !='undefined'){
           for (var j=0;j<hosts[i].ports[0].port.length;j++){
             ports.push({
@@ -406,9 +407,12 @@ function parseNmapOut(data){
               'service': hosts[i].ports[0].port[j].service[0].p.name ? hosts[i].ports[0].port[j].service[0].p.name : 'unknown'
             });
           }
+          if (ports.length==0) ports='nodata';
         }
+        else ports='nodata';
       }
-      else ports='nodata';
+      else ports='discovery';
+      
       //update hosts information but don't erase the name
       if (typeof(parsedhosts.hosts[mac])=='undefined'){ parsedhosts.hosts[mac]={} } //if new host then define as empty object
       parsedhosts.hosts[mac].ipaddr=ip;
@@ -525,7 +529,7 @@ function readLastscan(callback){
 
 function initScan(){
   appLogger.log('Starting quick network swipe');
-  portScan(appOptions.SUBNET,'fast',(ip,data)=>{
+  portScan(appOptions.SUBNET,'discovery',(ip,data)=>{
     if (data && data.hosts) {
       globallastscan=JSON.parse(JSON.stringify(data.stats));
       saveLastscan(globallastscan);
@@ -544,7 +548,7 @@ function fullScan(callback){
   for (var h=0;h<Object.keys(globalhosts).length;h++){ // set status of all hosts to 0
     globalhosts[Object.keys(globalhosts)[h]]['latency']=-1;
   }
-  portScan(appOptions.SUBNET,'subnet',(ip,data)=>{
+  portScan(appOptions.SUBNET,'portscan',(ip,data)=>{
     if (data && data.hosts) {
       globallastscan=JSON.parse(JSON.stringify(data.stats));
       saveLastscan(globallastscan);
@@ -581,7 +585,7 @@ function appInit() { // main function that starts everything
       SUBNET: '192.168.1.0/24',
       NMAP_SPEED: 5,
       NMAP_PORTS: 1000,
-      NMAP_CMD_SCAN: "/usr/bin/nmap --privileged -oX - -sU -sT --max-retries 1 --script nbstat",
+      NMAP_CMD_SCAN: "/usr/bin/nmap --privileged -oX - -sU -sS --max-retries 1 --script nbstat",
       NMAP_CMD_SWEEP: "/usr/bin/nmap --privileged -oX - -sU -p137 -T5 --max-retries 1 --script nbstat",
       NMAP_CRON: "30 03 * * *",
       NMAP_CRON_ENABLE: false

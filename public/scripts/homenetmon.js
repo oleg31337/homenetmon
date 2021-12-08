@@ -134,17 +134,20 @@ function generateMenu(){ // build menu with accounts and regions
     inputfiltervalue = document.getElementById("TableFilter").value; //get the value of input filter in the menu bar
   }
   var menuitems='<div class="ui inverted top attached menu">\
-  <a class="ui item" onclick="requestRescan(false,\'subnet\')"><i class="globe icon"></i>Rescan network</a>\
+  <div class="item"><img src="/images/appicon.png"></div>\
+  <a class="ui item" id="rescan_button" onclick="requestRescan(false,\'subnet\')"><i class="globe icon"></i>Rescan network</a>\
   <a class="ui item" onclick="displayScanStats()"><i class="info circle icon"></i>Last scan info</a>\
+  <a class="ui item" onclick="refreshTable()"><i class="sync alternate icon"></i>Refresh table</a>\
   <div class="right menu">\
   <div class="ui inverted transparent left icon input"><i class="filter icon"></i><input id="TableFilter" type="text" placeholder="Filter..." onkeyup="filterTable()" onpaste="filterTable()" value="'+inputfiltervalue+'"></div>\
   <a class="ui item" onclick="document.getElementById(\'TableFilter\').value=\'\';filterTable()"><i class="trash alternate outline icon"></i>Clear<br/>filter</a>\
-  <a class="ui disabled item" onclick=""></a>\
-  <a class="ui item" onclick="settingsDialog()"><i class="settings icon"></i>Settings</a>\
-  <a class="ui item" onclick="refreshTable()"><i class="sync alternate icon"></i>Refresh table</a>\
+  <div class="ui disabled item" visible=false>-----------------</div>\
+  <a class="ui item" onclick="settingsDialog()"><i class="settings icon"></i>&nbsp;Settings&nbsp;</a>\
   </div></div>'
   document.getElementById('MainMenu').innerHTML=menuitems;
   refreshTable();
+  checkStatus();
+  setInterval(checkStatus,10000);
 }
 
 function refreshTable(){ //refresh table data
@@ -214,8 +217,7 @@ function updateTableRow(host,callback){
     avail_color="red";
   }
   var portslist=''; // generate list of ports
-  if (host.ports!='nodata'){
-    
+  if (host.ports!='nodata' && host.ports!='discovery'){
     var ports_tcp=[];
     var ports_udp=[];
     for (var j=0;j<host.ports.length;j++){
@@ -239,11 +241,10 @@ function updateTableRow(host,callback){
       portslist+='</br>UDP:&nbsp;'+ports_udp.join(", ");
     }
   }
-  else {
-    //avail_color="gray";
+  else if (host.ports=='discovery') {
     portslist='<div class="ui inline active inline loader"></div>&nbsp;&nbsp;&nbsp;Scanning is in progress';
   }
-  if (portslist.length<3){
+  else {
     portslist='No open ports or scanning error. Try to rescan.';
   }
   if (host.scanning){
@@ -251,10 +252,10 @@ function updateTableRow(host,callback){
     portslist='<div class="ui inline active inline loader"></div>&nbsp;&nbsp;&nbsp;Scanning is in progress';
   }
   //now generate main table
-  var out='<td data-sort-value="'+ip2int(host.ipaddr)+'" textvalue="'+host.ipaddr+'"><div class="ui medium label '+avail_color+'">'+host.ipaddr+'</div>&nbsp;\
+  var out='<td data-sort-value="'+ip2int(host.ipaddr)+'" textvalue="'+host.ipaddr+'">'+host.ipaddr+'&nbsp;\
   &nbsp;<span class="ui" data-tooltip="Copy" data-variation="mini" data-inverted=""><i class="ui copy outline icon link" onclick="setClipboard(\''+host.ipaddr+'\',this)"></i></span>\
   &nbsp;<span class="ui" data-tooltip="Rescan" data-variation="mini" data-inverted=""><i class="ui sync alternate icon link" onclick="requestRescan(\''+mac+'\',\''+host.ipaddr+'\')"></i></span>\
-  &nbsp;<span class="ui" data-tooltip="Ping" data-variation="mini" data-inverted=""><i class="ui heartbeat alternate icon link" onclick="requestUpdate(\''+mac+'\',\''+host.ipaddr+'\')"></i></span>\
+  &nbsp;<span class="ui" data-tooltip="Ping" data-variation="mini" data-inverted=""><i class="ui heartbeat alternate icon link '+avail_color+'" onclick="requestUpdate(\''+mac+'\',\''+host.ipaddr+'\')"></i></span>\
   &nbsp;<span class="ui" data-tooltip="Delete" data-variation="mini" data-inverted=""><i class="ui x icon link" onclick="confirmDelete(\''+mac+'\',\''+host.ipaddr+'\')"></i></span>\
   </td>';
   var datasortdnsname = host.dnsnames.toString().trim();
@@ -271,6 +272,23 @@ function updateTableRow(host,callback){
   out+='<td>'+portslist+'</td>';
   tablerow.innerHTML = out;
   if (typeof(callback)=='function'){ callback(host); }
+}
+
+function checkStatus(){ // get instance and volumes data from the backend
+  console.log('checkStatus');
+  fetch("api/getnmaprun").then(response => response.json()).then(data => {
+    if (data) {
+      if (data.msg=='ok'){
+        document.getElementById("rescan_button").innerHTML='<i class="globe icon"></i>Rescan network'
+      }
+      else {
+        document.getElementById("rescan_button").innerHTML='<div class="ui active inline loader"></div>&nbsp;&nbsp;&nbsp;Scanning is in progress';
+      }
+    }
+    else {
+      document.getElementById("rescan_button").innerHTML='<i class="x icon"></i>Unavailable';
+    }
+  });
 }
 
 function changeName(elem,evt,mac,newname){
@@ -308,7 +326,7 @@ function requestUpdate(macaddr,ipaddr){
     clearTimeout(globalsetinterval[macaddr]);
     delete globalsetinterval[macaddr];
   };
-  document.getElementById(ipaddr).getElementsByClassName("ui medium label")[0].className="ui medium label gray";
+  document.getElementById(ipaddr).getElementsByClassName("ui heartbeat alternate icon link")[0].className="ui heartbeat alternate icon link gray";
   //console.log(mac,name);
   fetch("api/gethost?mac="+macaddr)
     .then(resp=>resp.json()).then(data=>{
@@ -347,15 +365,15 @@ function requestRescan(macaddr,ipaddr){
   console.log('requestRescan');
   if (ipaddr !='subnet'){
     document.getElementById(ipaddr).children[5].innerHTML='<div class="ui inline active inline loader"></div>&nbsp;&nbsp;&nbsp;Scanning is in progress'
-    //document.getElementById(ipaddr).getElementsByClassName("ui medium label")[0].className="ui medium label gray";
     if (typeof (globalsetinterval[macaddr]) == 'number') {
       clearTimeout(globalsetinterval[macaddr]);
       delete globalsetinterval[macaddr];
     };
   }
+  document.getElementById("rescan_button").innerHTML='<div class="ui inline active inline loader"></div>&nbsp;&nbsp;&nbsp;Scanning is in progress';
   //console.log(mac,name);
   postData('api/nmapscan',{'ip':ipaddr}).then (data => {
-    console.log(data);
+    //console.log(data);
     if (typeof(data.msg) !='undefined'){
       //console.log(data.msg)
       if (ipaddr =='subnet') responseDialog(data.msg,undefined);

@@ -118,9 +118,11 @@ function errorTableContents(errmsg){
 }
 function getTableData(){ // get instance and volumes data from the backend
   console.log('getTableData');
-  fetch("api/gethosts").then(response => response.json()).then(data => {
+  fetch("api/gethosts").catch((error)=>{})
+  .then(response => response.json())
+  .then(data => {
     generateTable(data);
-  });
+  }).catch((error)=>{responseDialog(undefined,['Error','Application is not available']);});
 }
 function clearTableData(){
   console.log('clearTableData');
@@ -139,7 +141,7 @@ function generateMenu(){ // build menu with accounts and regions
   <a class="ui item" onclick="displayScanStats()"><i class="info circle icon"></i>Last scan info</a>\
   <a class="ui item" onclick="refreshTable()"><i class="sync alternate icon"></i>Refresh table</a>\
   <div class="right menu">\
-  <div class="ui inverted transparent left icon input"><i class="filter icon"></i><input id="TableFilter" type="text" placeholder="Filter..." onkeyup="filterTable()" onpaste="filterTable()" value="'+inputfiltervalue+'"></div>\
+  <div class="ui left icon item"><i class="filter icon"></i>&nbsp;<div class="ui transparent inverted input">&nbsp;<input id="TableFilter" type="text" placeholder="Filter..." onkeyup="filterTable()" onpaste="filterTable()" value="'+inputfiltervalue+'"></div></div>\
   <a class="ui item" onclick="document.getElementById(\'TableFilter\').value=\'\';filterTable()"><i class="trash alternate outline icon"></i>Clear<br/>filter</a>\
   <div class="ui disabled item" visible=false>-----------------</div>\
   <a class="ui item" onclick="settingsDialog()"><i class="settings icon"></i>&nbsp;Settings&nbsp;</a>\
@@ -245,7 +247,7 @@ function updateTableRow(host,callback){
     portslist='<div class="ui inline active inline loader"></div>&nbsp;&nbsp;&nbsp;Scanning is in progress';
   }
   else {
-    portslist='No open ports or scanning error. Try to rescan.';
+    portslist='No open ports found. Try to rescan with more ports in scope.';
   }
   if (host.scanning){
     //vail_color="gray";
@@ -276,7 +278,9 @@ function updateTableRow(host,callback){
 
 function checkStatus(){ // get instance and volumes data from the backend
   console.log('checkStatus');
-  fetch("api/getnmaprun").then(response => response.json()).then(data => {
+  fetch("api/getnmaprun").catch((error)=>{})
+  .then(response => response.json())
+  .then(data => {
     if (data) {
       if (data.msg=='ok'){
         document.getElementById("rescan_button").innerHTML='<i class="globe icon"></i>Rescan network'
@@ -288,6 +292,10 @@ function checkStatus(){ // get instance and volumes data from the backend
     else {
       document.getElementById("rescan_button").innerHTML='<i class="x icon"></i>Unavailable';
     }
+  })
+  .catch((error)=>{
+    //console.warn (error);
+    document.getElementById("rescan_button").innerHTML='<i class="x icon"></i>App is unavailable';
   });
 }
 
@@ -329,10 +337,12 @@ function requestUpdate(macaddr,ipaddr){
   document.getElementById(ipaddr).getElementsByClassName("ui heartbeat alternate icon link")[0].className="ui heartbeat alternate icon link gray";
   //console.log(mac,name);
   fetch("api/gethost?mac="+macaddr)
-    .then(resp=>resp.json()).then(data=>{
-      updateTableRow(data);
-      globalsetinterval[macaddr]=setTimeout(function(){ requestUpdate((macaddr.toString()),(ipaddr.toString())); }, 60000-Math.floor(Math.random() * 2001));
-    });
+  .catch((error)=>{})
+  .then(resp=>resp.json()).then(data=>{
+    updateTableRow(data);
+    globalsetinterval[macaddr]=setTimeout(function(){ requestUpdate((macaddr.toString()),(ipaddr.toString())); }, 60000-Math.floor(Math.random() * 2001));
+  })
+  .catch((error)=>{});
 }
 
 function confirmDelete(macaddr,ipaddr){
@@ -358,7 +368,7 @@ function requestDelete(macaddr,ipaddr){
     else {
       responseDialog(undefined,data.err);
     }
-  });
+  }).catch((error)=>{responseDialog(undefined,['Error','Application is not available']);});
 }
 
 function requestRescan(macaddr,ipaddr){
@@ -383,7 +393,7 @@ function requestRescan(macaddr,ipaddr){
       if (ipaddr !='subnet') requestUpdate(macaddr,ipaddr);
       return;
     }
-  });
+  }).catch((error)=>{responseDialog(undefined,['Error','Application is not available']);});
   if (ipaddr !='subnet') globalsetinterval[macaddr]=setTimeout(function(){ requestUpdate((macaddr.toString()),(ipaddr.toString())); }, 1000);
 }
 
@@ -439,6 +449,7 @@ function displayScanStats(){ // show last scan stats
   document.getElementById('modal_contents').setAttribute("class", "ui large modal");
   document.getElementById('modal_contents').setAttribute("style", "background-color:#4d4d4d; color:#f2f2f2");
   fetch("api/getlastscan")
+    .catch((error)=>{})
     .then(resp=>resp.json())
     .then(scanstats=>{
       var contents='<div class="header" style="background-color:#4d4d4d; color:#f2f2f2">Last full network scan information</div>\
@@ -454,7 +465,7 @@ function displayScanStats(){ // show last scan stats
             <div class="ui black deny right button">Close</div>\
         </div>';
       document.getElementById('modal_contents').innerHTML=contents;
-    });
+    }).catch((error)=>{responseDialog(undefined,['Error','Application is not available']);});
   document.getElementById('modal_contents').innerHTML=activedimmer+'</br><div class="actions"><div class="ui black deny right button">Close</div></div>;';
   $('.ui.large.modal').modal('setting', 'closable', true);
   $('.ui.large.modal').modal('show');
@@ -464,6 +475,7 @@ function settingsDialog(){ // show settings dialog
   document.getElementById('modal_contents').setAttribute("class", "ui tiny modal");
   document.getElementById('modal_contents').setAttribute("style", "background-color:#4d4d4d; color:#f2f2f2");
   fetch("api/getsettings")
+    .catch((error)=>{})
     .then(resp=>resp.json())
     .then(settings=>{
       console.log(settings);
@@ -490,11 +502,9 @@ function settingsDialog(){ // show settings dialog
                 <div class="field">\
                 <label style="color:#f2f2f2">Scan speed</label>\
                 <select class="ui fluid dropdown" id="select_speed" name="speed">\
-                  <option value="5">5 Lightning fast (may skip ports)</option>\
-                  <option value="4">4 Faster (might skip ports)</option>\
-                  <option value="3">3 Thorough (steady)</option>\
-                  <option value="2">2 Very slow (extreme)</option>\
-                  <option value="1">1 Eternal (insanely slow)</option>\
+                  <option value="5">Fast (may skip ports)</option>\
+                  <option value="4">Normal (might skip ports)</option>\
+                  <option value="3">Slow (thorough)</option>\
                 </select>\
                 </div>\
                 <div class="field">\
@@ -539,7 +549,7 @@ function settingsDialog(){ // show settings dialog
       document.getElementById('select_ports').value=ports;
       document.getElementById('input_cron').value=cronexpr;
       document.getElementById('checkbox_cron').checked=cronenable;
-    });
+    }).catch((error)=>{responseDialog(undefined,['Error','Application is not available']);});
   document.getElementById('modal_contents').innerHTML=activedimmer+'</br><div class="actions"><div class="ui black deny right button">Close</div></div>;';
   $('.ui.tiny.modal').modal('setting', 'closable', false);
   $('.ui.tiny.modal').modal('show');

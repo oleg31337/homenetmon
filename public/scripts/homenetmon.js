@@ -98,7 +98,7 @@ function filterTable() { // function to filter table
       if (td[filtercolidx[j]].getAttribute('textvalue')){
         txtValue=td[filtercolidx[j]].getAttribute('textvalue');
       }
-      //console.log('txtvalue=='+txtValue);
+      ////console.log('txtvalue=='+txtValue);
       if (txtValue.toUpperCase().indexOf(filter) > -1) {
         matchfound++;
         break; // no need to process anything else as we have a match.
@@ -117,7 +117,7 @@ function errorTableContents(errmsg){
   $('#TableDimmer').removeClass('active');  
 }
 function getTableData(){ // get instance and volumes data from the backend
-  console.log('getTableData');
+  //console.log('getTableData');
   fetch("api/gethosts").catch((error)=>{})
   .then(response => response.json())
   .then(data => {
@@ -125,12 +125,12 @@ function getTableData(){ // get instance and volumes data from the backend
   }).catch((error)=>{responseDialog(undefined,['Error','Application is not available']);});
 }
 function clearTableData(){
-  console.log('clearTableData');
+  //console.log('clearTableData');
   $('#TableDimmer').addClass('active');
 }
 
 function generateMenu(){ // build menu with accounts and regions
-  console.log('generateMenu');
+  //console.log('generateMenu');
   var inputfiltervalue='';
   if (document.getElementById("TableFilter") != null && document.getElementById("TableFilter").value !=''){
     inputfiltervalue = document.getElementById("TableFilter").value; //get the value of input filter in the menu bar
@@ -153,13 +153,13 @@ function generateMenu(){ // build menu with accounts and regions
 }
 
 function refreshTable(){ //refresh table data
-  console.log("refreshTable");
+  //console.log("refreshTable");
   clearTableData();
   getTableData();
 }
 
 function generateTable(tabledata) { // create instances table contents
-  console.log("generateTable");
+  //console.log("generateTable");
   if (Object.keys(tabledata).length==0){
     document.getElementById("TableContents").innerHTML ='<div class="ui inverted placeholder segment"><div class="ui inverted icon header"><i class="search icon"></i>There is no hosts information at this moment</div></div>';
     setTimeout(function(){refreshTable();},10000);
@@ -191,8 +191,8 @@ function generateTable(tabledata) { // create instances table contents
     };
     globalsetinterval[macaddr]=setTimeout(function(){ requestUpdate((macaddr.toString()),(ipaddr.toString())); }, 60000-Math.floor(Math.random() * 2001));
     setTimeout(function(){ requestUpdate(macaddr,ipaddr); },5100-Math.floor(Math.random() * 5001));
-    //console.log(typeof(globalsetinterval[j]));
-    //console.log(globalsetinterval[j]);
+    ////console.log(typeof(globalsetinterval[j]));
+    ////console.log(globalsetinterval[j]);
   }
   $('table').tablesort().data('tablesort').sort($("th.default-sort"));
   filterTable();
@@ -256,7 +256,7 @@ function updateTableRow(host,callback){
   //now generate main table
   var out='<td data-sort-value="'+ip2int(host.ipaddr)+'" textvalue="'+host.ipaddr+'">'+host.ipaddr+'&nbsp;\
   &nbsp;<span class="ui" data-tooltip="Copy" data-variation="mini" data-inverted=""><i class="ui copy outline icon link" onclick="setClipboard(\''+host.ipaddr+'\',this)"></i></span>\
-  &nbsp;<span class="ui" data-tooltip="Rescan" data-variation="mini" data-inverted=""><i class="ui sync alternate icon link" onclick="requestRescan(\''+mac+'\',\''+host.ipaddr+'\')"></i></span>\
+  </br><span class="ui" data-tooltip="Rescan" data-variation="mini" data-inverted=""><i class="ui sync alternate icon link" onclick="requestRescan(\''+mac+'\',\''+host.ipaddr+'\')"></i></span>\
   &nbsp;<span class="ui" data-tooltip="Ping" data-variation="mini" data-inverted=""><i class="ui heartbeat alternate icon link '+avail_color+'" onclick="requestUpdate(\''+mac+'\',\''+host.ipaddr+'\')"></i></span>\
   &nbsp;<span class="ui" data-tooltip="Delete" data-variation="mini" data-inverted=""><i class="ui x icon link" onclick="confirmDelete(\''+mac+'\',\''+host.ipaddr+'\')"></i></span>\
   </td>';
@@ -277,7 +277,7 @@ function updateTableRow(host,callback){
 }
 
 function checkStatus(){ // get instance and volumes data from the backend
-  console.log('checkStatus');
+  //console.log('checkStatus');
   fetch("api/getnmaprun").catch((error)=>{})
   .then(response => response.json())
   .then(data => {
@@ -301,14 +301,14 @@ function checkStatus(){ // get instance and volumes data from the backend
 
 function changeName(elem,evt,mac,newname){
   if (evt.key == 'Enter') {
-    console.log('changeName');
-    //console.log(mac,newname);
+    //console.log('changeName');
+    ////console.log(mac,newname);
     postData('api/setname',{'mac':mac,'newname':newname}).then (data => {
-      //console.log(data);
+      ////console.log(data);
       if (typeof data.msg !='undefined'){
         elem.parentElement.parentElement.setAttribute('textvalue',newname);
         elem.blur();
-        //console.log(data.msg);
+        ////console.log(data.msg);
       }
       else {
         responseDialog(undefined,data.err);
@@ -329,13 +329,13 @@ async function postData(url = '', data = {}) {
 }
 
 function requestUpdate(macaddr,ipaddr){
-  console.log('requestUpdate');
+  //console.log('requestUpdate');
   if (typeof (globalsetinterval[macaddr]) == 'number') {
     clearTimeout(globalsetinterval[macaddr]);
     delete globalsetinterval[macaddr];
   };
   document.getElementById(ipaddr).getElementsByClassName("ui heartbeat alternate icon link")[0].className="ui heartbeat alternate icon link gray";
-  //console.log(mac,name);
+  ////console.log(mac,name);
   fetch("api/gethost?mac="+macaddr)
   .catch((error)=>{})
   .then(resp=>resp.json()).then(data=>{
@@ -346,23 +346,23 @@ function requestUpdate(macaddr,ipaddr){
 }
 
 function confirmDelete(macaddr,ipaddr){
-  console.log('confirmDelete');
+  //console.log('confirmDelete');
   confirmDialog("Delete "+macaddr,"Are you sure you want to delete this host?","requestDelete('"+macaddr+"','"+ipaddr+"')");
 }
 
 function requestDelete(macaddr,ipaddr){
-  console.log('requestDelete');
+  //console.log('requestDelete');
   macaddr=macaddr.trim();
   ipaddr=ipaddr.trim();
-  //console.log([macaddr,ipaddr]);
+  ////console.log([macaddr,ipaddr]);
   postData('api/deletehost',{'mac':macaddr,'ip':ipaddr}).then (data => {
-    //console.log(data);
+    ////console.log(data);
     if (typeof(data.msg) !='undefined'){
       if (typeof (globalsetinterval[macaddr]) == 'number') {
         clearTimeout(globalsetinterval[macaddr]);
         delete globalsetinterval[macaddr];
       };
-      //console.log(data.msg);
+      ////console.log(data.msg);
       document.getElementById(ipaddr).remove();
     }
     else {
@@ -372,7 +372,7 @@ function requestDelete(macaddr,ipaddr){
 }
 
 function requestRescan(macaddr,ipaddr){
-  console.log('requestRescan');
+  //console.log('requestRescan');
   if (ipaddr !='subnet'){
     document.getElementById(ipaddr).children[5].innerHTML='<div class="ui inline active inline loader"></div>&nbsp;&nbsp;&nbsp;Scanning is in progress'
     if (typeof (globalsetinterval[macaddr]) == 'number') {
@@ -381,11 +381,11 @@ function requestRescan(macaddr,ipaddr){
     };
   }
   document.getElementById("rescan_button").innerHTML='<div class="ui inline active inline loader"></div>&nbsp;&nbsp;&nbsp;Scanning is in progress';
-  //console.log(mac,name);
+  ////console.log(mac,name);
   postData('api/nmapscan',{'ip':ipaddr}).then (data => {
-    //console.log(data);
+    ////console.log(data);
     if (typeof(data.msg) !='undefined'){
-      //console.log(data.msg)
+      ////console.log(data.msg)
       if (ipaddr =='subnet') responseDialog(data.msg,undefined);
     }
     else {
@@ -398,11 +398,11 @@ function requestRescan(macaddr,ipaddr){
 }
 
 /* function requestPing(ipaddr){
-  console.log('requestPing');
+  //console.log('requestPing');
   if (typeof ipaddr =='undefined'){return;}
   document.getElementById(ipaddr).getElementsByClassName("ui medium label")[0].className="ui medium label gray";
   postData('api/ping',{'ip':ipaddr}).then (data => {
-    //console.log(data);
+    ////console.log(data);
     if (data.msg == 'ok' && data.latency >= 0){
       document.getElementById(ipaddr).getElementsByClassName("ui medium label")[0].className="ui medium label green";
     }
@@ -478,7 +478,7 @@ function settingsDialog(){ // show settings dialog
     .catch((error)=>{})
     .then(resp=>resp.json())
     .then(settings=>{
-      console.log(settings);
+      //console.log(settings);
       var subnet=settings.subnet ? settings.subnet : '192.168.1.0';
       var netmask=settings.netmask ? settings.netmask : '24';
       var speed=settings.speed ? settings.speed : 5;
@@ -542,7 +542,7 @@ function settingsDialog(){ // show settings dialog
           <div class="ui red cancel button">Cancel</div>\
         </div>';
       document.getElementById('modal_contents').innerHTML=contents;
-      activateForm();
+      activateSettingsForm();
       document.getElementById('input_subnet').value=subnet;
       document.getElementById('input_netmask').value=netmask;
       document.getElementById('select_speed').value=speed;
@@ -554,7 +554,7 @@ function settingsDialog(){ // show settings dialog
   $('.ui.tiny.modal').modal('setting', 'closable', false);
   $('.ui.tiny.modal').modal('show');
 }
-function activateForm() {
+function activateSettingsForm() {
     //console.warn('activateForm');
     $('.ui.form').form({
     on: 'blur',
@@ -588,12 +588,11 @@ function activateForm() {
     });
 }
 function submitForm(){
-  console.log('submitForm');
+  //console.log('submitForm');
   $('.ui.form.segment').form('submit');
 }
 
 function appInit() { // main app that is called from the html page to initialize the frontend app
-  console.log('appInit');
+  //console.log('appInit');
   generateMenu();
-  //setInterval(refreshTable, 120000);
 }

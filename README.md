@@ -13,10 +13,11 @@ Full stack Node.js/JavaScript application that scans and shows your local networ
 Currently only Linux operating systems are supported.
 1. Install node.js version 14 or 16 (So far tested on versions 14 and 16) https://nodejs.org/en/download/package-manager/
 2. Install nmap from your Linux package repository (e.g. `apt -y install nmap`)
-3. Git clone the app from here https://github.com/oleg31337/homenetmon to a folder on local drive, for example /opt/homenetmon
+3. Install nping from your Linux package repository (e.g. `apt -y install nping`)
+4. Git clone the app from here https://github.com/oleg31337/homenetmon to a folder on local drive, for example /opt/homenetmon
    For example: `git clone https://github.com/oleg31337/homenetmon homenetmon`
-4. Go into the application folder and run "`npm install`" to install required node modules
-5. Run as root the `set_permissions.sh` script to grant permissions for nmap and node.js to allow binding to network sockets
+5. Go into the application folder and run "`npm install`" to install required node modules
+6. Run as root the `set_permissions.sh` script to grant permissions for nmap and node.js to allow binding to network sockets
 
 ### Install as a systemd service
 1. Run script `sudo install_service.sh` and follow prompts. You can run the service as your user account, or script can create a service account.
@@ -39,6 +40,7 @@ Available options are:
    By default top 1000 ports from the list will be used.
  * NMAP_CMD_SCAN: This is nmap command line to run for full network scan. Do not change unless you know what you are doing. Consult nmap documentation.
  * NMAP_CMD_SWEEP: This is nmap command line to run for quick network swipe. Do not change unless you know what you are doing. Consult nmap documentation.
+ * NPING_CMD: This is nping command line to perform ARP ping. Do not change unless you know what you are doing. Consult nping documentation.
  * NMAP_CRON: This is the CRON expression for scheduled full network scans. https://en.wikipedia.org/wiki/Cron
    by default it will run at 3:30 AM every day - "30 03 * * *"
  * NMAP_CRON_ENABLE: This is the true/false parameter whether to schedule regular full network scans

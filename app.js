@@ -115,7 +115,7 @@ function pingHost(ipaddr,callback) {// ICMP Ping host function. Parameters: ip, 
     ping.sys.probe(ipaddr, function (isAlive) {
       if (!isAlive){
         appLogger.debug(ipaddr + ": Unreachable");
-        if (typeof(globalarptable[ipaddr])!='undefined') globalhosts[globalarptable[ipaddr]].latency=-1;
+        if (typeof(globalarptable[ipaddr])!='undefined' && globalhosts[globalarptable[ipaddr]]) globalhosts[globalarptable[ipaddr]].latency=-1;
         if (typeof(callback)=='function') callback(ipaddr,-1);
         return;
       }
@@ -462,6 +462,9 @@ function parseNmapOut(data){ // Function to parse json nmap output converted fro
           mac=localmac[findinArray(localip,ip)];
         }
       }
+      if (mac=='unknown'){ // if mac is still unknown, skip this host
+        continue;
+      }
       var dnsnames = [];
       if (typeof(hosts[i].hostnames[0].hostname) != 'undefined') {
         for (var nn=0;nn<hosts[i].hostnames[0].hostname.length;nn++){
@@ -469,7 +472,6 @@ function parseNmapOut(data){ // Function to parse json nmap output converted fro
         }
       }
       else dnsnames=[''];
-      
       var netbiosname='';
       if (typeof(hosts[i].hostscript) != 'undefined'){
         //console.log(JSON.stringify(hosts[i].hostscript[0].script[0].p.output));
@@ -499,7 +501,6 @@ function parseNmapOut(data){ // Function to parse json nmap output converted fro
         else ports='nodata';
       }
       else ports='discovery';
-      
       //update hosts information but don't erase the name
       if (typeof(parsedhosts.hosts[mac])=='undefined'){ parsedhosts.hosts[mac]={} } //if new host then define as empty object
       parsedhosts.hosts[mac].ipaddr=ip;
@@ -650,6 +651,13 @@ function fullScan(callback){ // Function to perform full subnet network scan
   });
 }
 
+function appShutdown() { //function to gracefully shutdown the app
+  appLogger.log('Caught kill signal, terminating the app');
+  saveGlobalhosts(()=>{
+    process.exit(0);
+  });
+}
+
 function appInit() { // main function that loads parameters and starts everything else
   appLogger.log('Starting homenetmon application');
   //set app options defaults
@@ -675,6 +683,7 @@ function appInit() { // main function that loads parameters and starts everythin
       appLogger.error('Error reading options file! Check the app-options.json file or remove it to use defaults');
       process.exit(1);
     }
+    getLocalIP(); // get local ip and mac addresses
   }
   else {
     appLogger.log('Application options file is not found, using defaults');
@@ -686,12 +695,6 @@ function appInit() { // main function that loads parameters and starts everythin
       });
     });
   }
-
-    // if (typeof(appOptions.NPING_CMD)=='undefined') {
-      // appOptions.NPING_CMD='/usr/bin/nping --privileged --arp -c2';
-      // saveAppOptions();
-    // }
-  
   readLastscan(); // Read last scan results from disk if available
   if (fs.existsSync('./globalhosts.json')) { // check if globalhosts file exist
     appLogger.log('Reading hosts data from globalhosts.json file');
@@ -734,5 +737,8 @@ function appInit() { // main function that loads parameters and starts everythin
     else {appLogger.error("Error starting server on port "+appOptions.HTTPport,err);}
   });
 }
+
+process.on('SIGTERM', appShutdown); // register the shutdown function on receiving TERM signal
+process.on('SIGINT', appShutdown); // register the shutdown function on receiving INT signal
 
 appInit(); //Finally initialize the app

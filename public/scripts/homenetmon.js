@@ -7,10 +7,23 @@ var activedimmer='\
 var globalsetinterval={}; //global object of timeout functions
 const DEBUG=1;
 
-function ip2int(ip) { // convert IP address to 32 bit decimal number
-    return ip.split('.').reduce(function(ipInt, octet) { return (ipInt<<8) + parseInt(octet, 10)}, 0) >>> 0;
+//function ip2int(ip) { // convert IP address to 32 bit decimal number
+//    return ip.split('.').reduce(function(ipInt, octet) { return (ipInt<<8) + parseInt(octet, 10)}, 0) >>> 0;
+//}
+function ip2int(ip) { // Convert decimal number representation to IP dotted address
+    var d = ip.split('.');
+    return ((((((+d[0])*256)+(+d[1]))*256)+(+d[2]))*256)+(+d[3]);
 }
 
+function int2ip(num) { // Convert IP dotted address to representing decimal number
+    var ip = num%256;
+    for (var i = 3; i > 0; i--)
+    {
+        num = Math.floor(num/256);
+        ip = num%256 + '.' + ip;
+    }
+    return ip;
+}
 function secondsToHms(d) {
     d = Number(d);
     var h = Math.floor(d / 3600);
@@ -144,6 +157,7 @@ function generateMenu(){ // build menu with accounts and regions
   <div class="ui left icon item"><i class="filter icon"></i>&nbsp;<div class="ui transparent inverted input">&nbsp;<input id="TableFilter" type="text" placeholder="Filter..." onkeyup="filterTable()" onpaste="filterTable()" value="'+inputfiltervalue+'"></div></div>\
   <a class="ui item" onclick="document.getElementById(\'TableFilter\').value=\'\';filterTable()"><i class="trash alternate outline icon"></i>Clear<br/>filter</a>\
   <div class="ui disabled item" visible=false>-----------------</div>\
+  <a class="ui item" onclick="importexportDialog()"><i class="download icon"></i>Import/Export</a>\
   <a class="ui item" onclick="settingsDialog()"><i class="settings icon"></i>&nbsp;Settings&nbsp;</a>\
   </div></div>'
   document.getElementById('MainMenu').innerHTML=menuitems;
@@ -244,7 +258,7 @@ function updateTableRow(host,callback){
     }
   }
   else if (host.ports=='discovery') {
-    portslist='<div class="ui inline active inline loader"></div>&nbsp;&nbsp;&nbsp;Scanning is in progress';
+    portslist='<div class="ui inverted placeholder"><div class="paragraph">Scanning...</div></div>';
   }
   else {
     portslist='No open ports found. Try to rescan with more ports in scope.';
@@ -590,6 +604,92 @@ function activateSettingsForm() {
 function submitForm(){
   //console.log('submitForm');
   $('.ui.form.segment').form('submit');
+}
+function loadHostsJSON(elem){
+  var file=elem.files[0];
+  var reader = new FileReader();
+  reader.readAsText(file,'UTF-8');
+  reader.onload = readerEvent => {
+    var content = JSON.parse(readerEvent.target.result);
+    postData('api/importhostsjson',content).then (data => {
+      $('.ui.tiny.modal').modal('hide');
+      if (typeof data.msg !='undefined'){
+        refreshTable();
+        responseDialog(data.msg,undefined);
+      }
+      else if (typeof data.err !='undefined'){
+        responseDialog(undefined,data.err);
+      }
+      else {
+        responseDialog(undefined,["Error","Error importing hosts file"]);
+      }
+    })
+    .catch((error)=>{responseDialog(undefined,["Error","Error importing hosts file</br>"+error]);});
+  }
+}
+
+function importexportDialog(){ // show import/export dialog
+  document.getElementById('modal_contents').setAttribute("class", "ui tiny modal");
+  document.getElementById('modal_contents').setAttribute("style", "background-color:#4d4d4d; color:#f2f2f2");
+  var contents='\
+  <div class="ui header" style="background-color:#4d4d4d; color:#f2f2f2"><i class="download icon"></i>&nbsp;Import/Export</div>\
+    <div class="content" style="background-color:#4d4d4d; color:#f2f2f2">\
+      Export hosts data as:&nbsp;&nbsp;\
+      <div class="ui button" onclick="saveHostsJSON()">JSON</div>\
+      <div class="ui button" onclick="saveHostsCSV()">CSV</div>\
+      </br>\
+      <input type="file" id="input-file" name="input-file" accept=".json,text/json" onchange="loadHostsJSON(this)" style="display: none" />\
+      </br>\
+      Import hosts data as:&nbsp;&nbsp;\
+      <div class="ui button" onclick="getElementById(\'input-file\').click()">JSON</div>\
+    </div>\
+    <div class="ui actions"  style="background-color:#4d4d4d; color:#f2f2f2">\
+      <div class="ui grey cancel button">Close</div>\
+    </div>';
+  document.getElementById('modal_contents').innerHTML=contents;
+  //activateSettingsForm();
+  $('.ui.tiny.modal').modal('setting', 'closable', true);
+  $('.ui.tiny.modal').modal('show');
+}
+function saveHostsJSON(){
+  //console.log('saveHostsJSON');
+  fetch("api/gethosts").catch((error)=>{})
+  .then(response => response.json())
+  .then(data => {
+    download(JSON.stringify(data,null,2),'hosts_'+ new Date().toLocaleDateString() +'.json','text/json');
+  }).catch((error)=>{responseDialog(undefined,['Error','Application is not available']);});
+}
+function saveHostsCSV(){
+  //console.log('saveHostsJSON');
+  fetch("api/gethosts").catch((error)=>{})
+  .then(response => response.json())
+  .then(data => {
+    download(convertHostsCSV(data),'hosts_'+ new Date().toLocaleDateString() +'.csv','text/csv');
+  }).catch((error)=>{responseDialog(undefined,['Error','Application is not available']);});
+}
+function convertHostsCSV(data){
+  var csv='"IP Address","Status","DNS Name","NetBIOS Name","Name","MAC Address","Vendor","Ports TCP","Ports UDP"\r\n'
+  for(var i = 0; i < Object.keys(data).length; i++) {
+    var host=data[Object.keys(data)[i]];
+    var ports_tcp=[];
+    var ports_udp=[];
+    var state="Offline";
+    if (host.latency>-1){
+      state="Online";
+    }
+    if (host.ports!='nodata' && host.ports!='discovery'){
+      for (var j=0;j<host.ports.length;j++){
+        if (host.ports[j].protocol=='tcp') {
+          ports_tcp.push(host.ports[j].number);
+        }
+        else {
+          ports_udp.push(host.ports[j].number);
+        }
+      }
+    }
+    csv+='"'+[host.ipaddr,state,host.dnsnames.join(','),host.netbiosname,host.name,host.mac,host.vendor,ports_tcp.join(','),ports_udp.join(',')].join('","')+'"\r\n';
+  }
+  return csv;
 }
 
 function appInit() { // main app that is called from the html page to initialize the frontend app

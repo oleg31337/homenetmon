@@ -138,36 +138,13 @@ function pingHost(ipaddr,callback) {// ICMP Ping host function. Parameters: ip, 
 
 app.get('/api/gethosts', (req, res, next) => {// Get hosts endpoint for all hosts.
   if (Object.keys(globalhosts).length>0){
-    return res.status(200).type('application/json').send(JSON.stringify(globalhosts)).end;  
+    setTimeout(function (){ saveGlobalhosts(); }, 30000); // save global hosts when latency info is updated
+    return res.status(200).type('application/json').send(JSON.stringify(globalhosts)).end;
   }
   else {
     return res.status(200).type('application/json').send('{}').end;
   }
 });
-
-
-/* app.get('/api/gethost', (req, res, next) => { // Get host info endpoint. Parameters: mac or ip
-  //console.log(req);
-  if (Object.keys(globalhosts).length>0){
-    if (req.query.mac && globalhosts[req.query.mac]){
-      pingHost(globalhosts[req.query.mac].ipaddr, (ip,latency)=>{
-        if (latency==-1){
-        //globalhosts[req.query.mac].latency=latency;
-        return res.status(200).type('application/json').send(JSON.stringify(globalhosts[req.query.mac])).end;
-      });
-    }
-    else if (req.query.ip && globalarptable[req.query.ip] && globalhosts[globalarptable[req.query.ip]]){
-      pingHost(globalhosts[globalarptable[req.query.ip]].ipaddr, (ip,latency)=>{
-        //globalhosts[req.query.mac].latency=latency;
-        return res.status(200).type('application/json').send(JSON.stringify(globalhosts[globalarptable[req.query.ip]])).end;
-      });
-    }
-    else return res.status(500).type('application/json').send('{"err":"["Error","Malformed request or no host data"]"}').end;
-  }
-  else {
-    return res.status(500).type('application/json').send('{"err":"["Error","Malformed request or no host data"]"}').end;
-  }
-}); */
 
 app.get('/api/gethost', (req, res, next) => { // Get host info endpoint. Parameters: mac or ip
   //console.log(req);
@@ -214,6 +191,43 @@ app.get('/api/getlastscan', (req, res, next) => { // Get last scan endpoint. Out
   }
   else {
     return res.status(500).type('application/json').send('{"err":"["Not available","Last scan info is not available yet"]"}').end;
+  }
+});
+
+app.post('/api/importhostsjson', (req, res, next) => { // Save settings endpoint. Parameters: settings_objec
+  //console.log(typeof(req.body));
+  //console.log(req.body);
+  if (typeof(req.body)=='object'){
+    let hosts=req.body;
+    appLogger.log('Importing hosts data');
+    //console.log(hosts);
+    var data_is_valid=true;
+    if (Object.keys(hosts).length >1){ // validating the data
+      for (var i=0; i<Object.keys(hosts).length; i++){
+        var host=hosts[Object.keys(hosts)[i]];
+        //console.log(host);
+        try {
+          if (!host.ipaddr || !host.mac || Object.keys(hosts)[i].toLowerCase() != host.mac.toLowerCase()) data_is_valid=false;
+        }
+        catch {
+          data_is_valid=false;
+        }
+      }
+    }
+    else data_is_valid=false;
+    if (data_is_valid){
+      globalhosts=hosts;
+      saveGlobalhosts();
+      return res.status(200).type('application/json').send('{"msg":["Success","Hosts file imported successfully"]}').end;
+    }
+    else {
+      appLogger.error('Error importing hosts data. Data is invalid');
+      return res.status(500).type('application/json').send('{"err":["Error","Hosts file is invalid"]}').end;
+    }
+  }
+  else {
+    appLogger.error('Error importing hosts data. Data is empty');
+    return res.status(500).type('application/json').send('{"err":["Error","Hosts file is invalid"]}').end;
   }
 });
 

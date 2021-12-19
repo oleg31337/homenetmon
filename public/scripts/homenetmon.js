@@ -237,14 +237,21 @@ function updateTableRow(host,callback){
     var ports_tcp=[];
     var ports_udp=[];
     for (var j=0;j<host.ports.length;j++){
-
       if (host.ports[j].protocol=='tcp') {
-        if (host.ports[j].number == 443){
-          ports_tcp.push('&nbsp;<span class="ui" data-tooltip="'+host.ports[j].service+'" data-variation="mini" data-inverted=""><a target="_blank" href="https://'+host.ipaddr+'">'+host.ports[j].number+'</a></span>');
+        var proto='http';
+        if (host.ports[j].number == 21){
+          proto='ftp';
         }
-        else {
-          ports_tcp.push('&nbsp;<span class="ui" data-tooltip="'+host.ports[j].service+'" data-variation="mini" data-inverted=""><a target="_blank" href="http://'+host.ipaddr+':'+host.ports[j].number+'">'+host.ports[j].number+'</a></span>');
+        else if (host.ports[j].number == 22){
+          proto='ssh';
         }
+        else if (host.ports[j].number == 23){
+          proto='telnet';
+        }
+        else if (host.ports[j].number == 443){
+          proto='https';
+        }
+        ports_tcp.push('&nbsp;<span class="ui" data-tooltip="'+host.ports[j].service+'" data-variation="mini" data-inverted=""><a target="_blank" href="'+proto+'://'+host.ipaddr+':'+host.ports[j].number+'">'+host.ports[j].number+'</a></span>');
       }
       else {
         ports_udp.push('&nbsp;<span class="ui" data-tooltip="'+host.ports[j].service+'" data-variation="mini" data-inverted="">'+host.ports[j].number+'</span>');

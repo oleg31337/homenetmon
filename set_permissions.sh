@@ -7,3 +7,4 @@ fi
 
 /sbin/setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip /usr/bin/nmap
 /sbin/setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip /usr/bin/node
+/sbin/setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip /usr/bin/nping

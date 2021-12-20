@@ -673,7 +673,7 @@ function appShutdown() { //function to gracefully shutdown the app
 }
 
 function appInit() { // main function that loads parameters and starts everything else
-  appLogger.log('Starting homenetmon application');
+  appLogger.log('Starting homenetmon application on '+process.platform);
   //set app options defaults
   appOptions={
     HTTPport: 30450,
@@ -688,6 +688,12 @@ function appInit() { // main function that loads parameters and starts everythin
     NMAP_CRON: "30 03 * * *",
     NMAP_CRON_ENABLE: false
   };
+  if (process.platform == 'win32'){ // if we are on Windows, then omit full path as nmap is added to system path by default
+    appOptions.NMAP_CMD_SCAN = "nmap.exe --privileged -oX - -sU -sS --max-retries 1 --script nbstat"
+    appOptions.NMAP_CMD_SWEEP = "nmap.exe --privileged -oX - -sU -p137 -T3 --script nbstat"
+    appOptions.NPING_CMD = "nping.exe --privileged --arp -c2"
+  }
+
   if (fs.existsSync('./app-options.json')) { // check if options file exists, then read it
     appLogger.log('Reading application options');
     try {

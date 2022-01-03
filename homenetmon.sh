@@ -38,6 +38,14 @@ if [ "$npingcap" != "/usr/bin/nping = cap_net_bind_service,cap_net_admin,cap_net
   exit 1
 fi
 
+if [ "$1" -eq "-d" -or "$1" -eq "--debug" ]
+    export DEBUG=true
+fi
+
+if [ "$1" -eq "-s" -or "$1" -eq "--service" ]
+    export RUNASSERVICE=true
+fi
+
 cd $scriptpath
 $nodepath app.js
 

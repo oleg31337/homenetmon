@@ -8,6 +8,7 @@ const fileStore = require('session-file-store')(session); // express session fil
 const ping = require ("ping");
 const parseString = require('xml2js').parseString;
 const cron = require('cron');
+const open = require ('open');
 
 const appLogger = require ('./applogger.js'); //logging routines
 
@@ -27,8 +28,9 @@ var appOptions = {}; // global app options
 var globalhosts={}; // in-memory list of all hosts
 var globallastscan={};// in-memory last scan stats
 var globalarptable={}; // in-memory arp table
-var globalnmappid=16777215; // to prevent simultaneous nmap runs
 var nmapCron=false; //global nmap cron object
+var nmapruntime; //global nmap exec object
+var firstrun = true; // global first run flag
 
 app.set('trust proxy', 1); // support for the app behind reverse proxy, allows secure cookie.
 app.use(express.json());
@@ -50,7 +52,7 @@ app.use('/', express.static(path.join(__dirname, 'public'))); // supply local pu
 
 app.use((err, req, res, next) => { //Global endpoint error handler
   appLogger.error(err.stack);
-  return res.status(500).type('application/json').send('Internal server error!').end;
+  return res.status(200).type('text/plain').send('Internal server error!').end;
 })
 
 function randomString(length) { // Function to generate random string with specified length
@@ -98,12 +100,12 @@ function validateIP(ipaddress) { //Validate IP address function with/without net
 app.post('/api/ping', (req, res, next) => {// ICMP Ping host endpoint. Parameters: ip
   if (typeof(req.body.ip) != undefined && validateIP(req.body.ip)){
     pingHost(req.body.ip, (ip,lat)=>{
-      appLogger.debug('pinged address '+ip+' latency '+lat);
+      appLogger.debug('Pinged address '+ip+' with latency '+lat);
       return res.status(200).type('application/json').send('{"msg":"ok","latency":'+lat+'}').end;
     });
   }
   else {
-    return res.status(500).type('application/json').send('{"err":["Error","Error pinging"]}').end;
+    return res.status(200).type('application/json').send('{"err":["Error","Error pinging"]}').end;
   }
 });  
 
@@ -135,7 +137,6 @@ function pingHost(ipaddr,callback) {// ICMP Ping host function. Parameters: ip, 
   }
 }
 
-
 app.get('/api/gethosts', (req, res, next) => {// Get hosts endpoint for all hosts.
   if (Object.keys(globalhosts).length>0){
     setTimeout(function (){ saveGlobalhosts(); }, 30000); // save global hosts when latency info is updated
@@ -159,7 +160,7 @@ app.get('/api/gethost', (req, res, next) => { // Get host info endpoint. Paramet
       macaddr=globalarptable[req.query.ip]
       ipaddr=globalhosts[macaddr].ipaddr
     }
-    else return res.status(500).type('application/json').send('{"err":"["Error","Malformed request or no host data"]"}').end;
+    else return res.status(200).type('application/json').send('{"err":"["Error","Malformed request or no host data"]"}').end;
     pingHost(ipaddr, (ip,latency)=>{
       if (latency == -1){ // if ICMP ping fails try ARP ping
         pingArp(ip,(retip,state,err)=>{
@@ -170,7 +171,7 @@ app.get('/api/gethost', (req, res, next) => { // Get host info endpoint. Paramet
     });
   }
   else {
-    return res.status(500).type('application/json').send('{"err":"["Error","Malformed request or no host data"]"}').end;
+    return res.status(200).type('application/json').send('{"err":"["Error","Malformed request or no host data"]"}').end;
   }
 });
 
@@ -190,7 +191,7 @@ app.get('/api/getlastscan', (req, res, next) => { // Get last scan endpoint. Out
     return res.status(200).type('application/json').send(JSON.stringify(globallastscan)).end;  
   }
   else {
-    return res.status(500).type('application/json').send('{"err":"["Not available","Last scan info is not available yet"]"}').end;
+    return res.status(200).type('application/json').send('{"err":"["Not available","Last scan info is not available yet"]"}').end;
   }
 });
 
@@ -222,12 +223,12 @@ app.post('/api/importhostsjson', (req, res, next) => { // Save settings endpoint
     }
     else {
       appLogger.error('Error importing hosts data. Data is invalid');
-      return res.status(500).type('application/json').send('{"err":["Error","Hosts file is invalid"]}').end;
+      return res.status(200).type('application/json').send('{"err":["Error","Hosts file is invalid"]}').end;
     }
   }
   else {
     appLogger.error('Error importing hosts data. Data is empty');
-    return res.status(500).type('application/json').send('{"err":["Error","Hosts file is invalid"]}').end;
+    return res.status(200).type('application/json').send('{"err":["Error","Hosts file is invalid"]}').end;
   }
 });
 
@@ -235,7 +236,7 @@ app.post('/api/savesettings', (req, res, next) => { // Save settings endpoint. P
   //console.log(typeof(req.body));
   //console.log(req.body);
   if (typeof(req.body)=='object'){
-    appOptions.SUBNET=req.body.subnet+'/'+req.body.netmask;
+    appOptions.SUBNET=req.body.subnet.split('/')[0]+'/'+req.body.netmask;
     appOptions.NMAP_SPEED=req.body.speed;
     appOptions.NMAP_PORTS=req.body.ports;
     appOptions.NMAP_CRON=req.body.cronexpr;
@@ -253,6 +254,11 @@ app.post('/api/savesettings', (req, res, next) => { // Save settings endpoint. P
     else appLogger.error('Error: Cron is not properly initialized!');
     //console.log(appOptions);
     saveAppOptions(appOptions);
+    if (typeof(req.body.firstrun)!='undefined' && req.body.firstrun=='on') {
+      if (!checkNmappid()) {
+        initScan(); // start first scan, it will reset the firstrun flag on completion
+      }
+    }
   }
   res.redirect('/');
 });
@@ -261,30 +267,40 @@ app.get('/api/getsettings', (req, res, next) => { // Get settings endpoint. outp
   //console.log(req);
   if (appOptions){
     let settings={};
-    settings.subnet=appOptions.SUBNET ? appOptions.SUBNET.split('/')[0] : localsubnet.split('/')[0];
-    settings.netmask=appOptions.SUBNET ? appOptions.SUBNET.split('/')[1]: localsubnet.split('/')[1];
+    settings.subnet=appOptions.SUBNET ? appOptions.SUBNET.split('/')[0] : localsubnet[0].split('/')[0];
+    settings.netmask=appOptions.SUBNET ? appOptions.SUBNET.split('/')[1]: localsubnet[0].split('/')[1];
     settings.ports=appOptions.NMAP_PORTS ? appOptions.NMAP_PORTS : '1000';
     settings.speed=appOptions.NMAP_SPEED ? appOptions.NMAP_SPEED : 5;
     settings.cronexpr=appOptions.NMAP_CRON ? appOptions.NMAP_CRON : '0 3 * * *';
     settings.cronenable=(typeof(appOptions.NMAP_CRON_ENABLE)!='undefined') ? appOptions.NMAP_CRON_ENABLE : true; // this one is tricky as it is boolean
+    settings.localsubnet=localsubnet;
+    if (firstrun) settings.firstrun=true; // let frontend know if it is a first run.
     return res.status(200).type('application/json').send(JSON.stringify(settings)).end;  
   }
   else {
-    return res.status(500).type('application/json').send('{"err":"["Not available","Error getting settings. Check application log"]"}').end;
+    return res.status(200).type('application/json').send('{"err":"["Not available","Error getting settings. Check application log"]"}').end;
   }
 });
 
-app.post('/api/nmapscan', (req, res, next) => { // Nmap scan endpoint. Parameters: ip: ipaddress|'subnet', type: portscan|discovery
+app.post('/api/nmapscan', (req, res, next) => { // Nmap scan endpoint. Parameters: ip: ipaddress|'subnet|abort', type: portscan|discovery
   if (typeof(req.body.ip) != undefined){
+    if (checkNmappid() && typeof(req.body.ip) != 'undefined' && req.body.ip == 'abort') { //abort mechanism
+      appLogger.log('Aborting nmap scan by request');
+      nmapruntime.kill('SIGINT');
+      return res.status(200).type('application/json').send('{"msg":["Aborted","Network scan was aborted"]}').end;
+    }
+    else if (typeof(req.body.ip) != 'undefined' && req.body.ip == 'abort') {
+      return res.status(200).type('application/json').send('{"err":["Error","Network scan was not running"]}').end;
+    }
     if (!checkNmappid()) {
       if (req.body.ip=='subnet'){
-            portScan(req.body.ip, req.body.type);
+            portScan(req.body.ip, req.body.type, req.body.options);
             return res.status(200).type('application/json').send('{"msg":["Network scan started","It will take some time to complete"]}').end;
           }
       if (globalarptable[req.body.ip]){
         globalhosts[globalarptable[req.body.ip]].scanning=true; //set host in scanning mode (if found in arp table of course)
       }
-      portScan(req.body.ip, req.body.type);
+      portScan(req.body.ip, req.body.type, req.body.options);
       return res.status(200).type('application/json').send('{"msg":["Host scan started","It will take some time to complete"]}').end;
     }
     else {
@@ -292,7 +308,7 @@ app.post('/api/nmapscan', (req, res, next) => { // Nmap scan endpoint. Parameter
     }
   }
   else {
-    return res.status(500).type('application/json').send('{"err":"["Error","Missing ip information"]"}').end;
+    return res.status(200).type('application/json').send('{"err":"["Error","Missing ip information"]"}').end;
   }
 });  
 
@@ -303,7 +319,7 @@ app.post('/api/setname', (req, res, next) => {// Rename host endpoint. Parameter
     return res.status(200).type('application/json').send('{"msg":"ok"}').end;
   }
   else {
-    return res.status(500).type('application/json').send('{"err":"["Error","Error setting new name"]"}').end;
+    return res.status(200).type('application/json').send('{"err":"["Error","Error setting new name"]"}').end;
   }
 });
 
@@ -314,7 +330,7 @@ app.post('/api/deletehost', (req, res, next) => { // Delete host endpoint. Param
     return res.status(200).type('application/json').send('{"msg":"ok"}').end;
   }
   else {
-    return res.status(500).type('application/json').send('{"err":"["Error","Error deleting host"]"}').end;
+    return res.status(200).type('application/json').send('{"err":"["Error","Error deleting host"]"}').end;
   }
 });
 
@@ -323,7 +339,7 @@ app.post('/api/pingarp', (req, res, next) => { // Ping arp endpoint. Parameters:
   if (typeof(req.body.ip) != undefined && validateIP(req.body.ip)){
     pingArp(req.body.ip, (ipaddr,state,err)=>{
       if (err){
-        return res.status(500).type('application/json').send('{"err":"["Error","Error calling pingarp"]"}').end;
+        return res.status(200).type('application/json').send('{"err":"["Error","Error calling pingarp"]"}').end;
       }
       if (state){
         return res.status(200).type('application/json').send(JSON.stringify({msg:{ip:ipaddr,mac:state,status:1}})).end;
@@ -334,7 +350,7 @@ app.post('/api/pingarp', (req, res, next) => { // Ping arp endpoint. Parameters:
     });
   }
   else {
-    return res.status(500).type('application/json').send('{"err":"["Error","Error calling pingarp"]"}').end;
+    return res.status(200).type('application/json').send('{"err":"["Error","Error calling pingarp"]"}').end;
   }
 });
 
@@ -379,7 +395,7 @@ function pingArp(ipaddr,callback){ //Nping ARP pinger function. Callback output 
 
 function checkNmappid(){ // Function to check if nmap pid is still running
   try {
-    var $pid=process.kill(globalnmappid,0);
+    var $pid=process.kill(nmapruntime.pid,0);
     //console.log('pid: '+$pid);
     return true
   }
@@ -403,16 +419,17 @@ function updateArp(ipaddr,macaddr) { // Function to update ARP table in app memo
   return;
 }
 
-function portScan(ipaddr,type,callback){ //Function to perform port scanning. Parameters: ip,type('portscan'|'discovery'). Callback parameters: ip, parsedhosts_obj, err
+function portScan(ipaddr,type,options,callback){ //Function to perform port scanning. Parameters: ip,type('portscan'|'discovery'). Callback parameters: ip, parsedhosts_obj, err
   var scanscope='host'; // single host scope by default
   const { exec } = require("child_process");
   var nmapcmd=appOptions.NMAP_CMD_SCAN // full portscan by default
-  if (appOptions.NMAP_SPEED){
-    nmapcmd+=' -T'+appOptions.NMAP_SPEED;
+  if (typeof(options) != 'object'){
+    options={'speed':appOptions.NMAP_SPEED, 'ports': appOptions.NMAP_PORTS};
   }
-  if (appOptions.NMAP_PORTS){
-    nmapcmd+=' --top-ports '+appOptions.NMAP_PORTS;
-  }
+  //console.log(options);
+  nmapcmd+=' -T'+options.speed;
+  nmapcmd+=' --top-ports '+options.ports;
+  if (typeof(options)!='undefined' && typeof(options.ports)!='undefined' && options.ports==0){type='discovery'} //if 0 ports then it is discovery.
   if (typeof(type)!='undefined' && type=='discovery') { //fast host discovery scan
     nmapcmd=appOptions.NMAP_CMD_SWEEP;
     appLogger.debug('Starting fast network swipe of '+ipaddr);
@@ -424,7 +441,7 @@ function portScan(ipaddr,type,callback){ //Function to perform port scanning. Pa
     appLogger.log('Starting on-demand full subnet network scan');
   }
   if (typeof(ipaddr) != 'undefined'){
-    var nmaprun = exec(nmapcmd+' '+ipaddr, {maxBuffer: 10485760, timeout: 86400000}, (error, stdout, stderr) => {
+    nmapruntime = exec(nmapcmd+' '+ipaddr, {maxBuffer: 10485760, timeout: 86400000}, (error, stdout, stderr) => {
       if (error) {
         appLogger.error('Error Nmap: '+error.message);
         if (typeof(callback)=='function') callback(ipaddr,false,error.message.toString());
@@ -457,9 +474,8 @@ function portScan(ipaddr,type,callback){ //Function to perform port scanning. Pa
         //console.log(parsedhosts);
       });
       
-    }); // 50mb buffer and 24 hour timout
-    globalnmappid=nmaprun.pid;
-    appLogger.debug('Nmap started with pid: '+nmaprun.pid);
+    });
+    appLogger.debug('Nmap started with pid: '+nmapruntime.pid);
   }
   else if (typeof(callback)=='function') callback(ipaddr,false);
 }
@@ -497,8 +513,7 @@ function parseNmapOut(data){ // Function to parse json nmap output converted fro
           if (elem[n].p.key=='server_name') netbiosname=elem[n].t;
         }
       }
-      if (typeof(netbiosname)=='undefined') netbiosname='';
-      if (netbiosname=='<unknown>') netbiosname='';
+      if (typeof(netbiosname)=='undefined' || netbiosname=='<unknown>') netbiosname='';
       var vendor = hosts[i].address[1] ? hosts[i].address[1].p.vendor : 'unknown';
       var ports=[];
       if (data.scantype!='discovery') {
@@ -514,7 +529,13 @@ function parseNmapOut(data){ // Function to parse json nmap output converted fro
         }
         else ports='nodata';
       }
-      else ports='discovery';
+      else {
+        if (typeof(globalhosts[mac])!='undefined' && typeof(globalhosts[mac].ports)!='undefined') ports=globalhosts[mac].ports;
+        else {
+          if (firstrun) ports='discovery';
+          else ports='nodata';
+        }
+      }
       //update hosts information but don't erase the name
       if (typeof(parsedhosts.hosts[mac])=='undefined'){ parsedhosts.hosts[mac]={} } //if new host then define as empty object
       parsedhosts.hosts[mac].ipaddr=ip;
@@ -631,30 +652,37 @@ function readLastscan(callback){ // Function to read last scan information from 
 
 function initScan(){ // Function to do initial network swipe before full scan
   appLogger.log('Starting quick network swipe');
-  portScan(appOptions.SUBNET,'discovery',(ip,data)=>{
+  portScan(appOptions.SUBNET,'discovery',undefined,(ip,data)=>{
     if (data && data.hosts) {
       globallastscan=JSON.parse(JSON.stringify(data.stats));
       saveLastscan(globallastscan);
       saveGlobalhosts();
       appLogger.log('Quick network swipe is complete');
       appLogger.log('Starting full network scan');
+      firstrun=false;
       fullScan();
     }
     else {
       appLogger.error('Error running quick network swipe');
     }
   });
+
 }
 
 function fullScan(callback){ // Function to perform full subnet network scan
   for (var h=0;h<Object.keys(globalhosts).length;h++){ // set status of all hosts to 0
     globalhosts[Object.keys(globalhosts)[h]]['latency']=-1;
   }
-  portScan(appOptions.SUBNET,'portscan',(ip,data)=>{
+  portScan(appOptions.SUBNET,'portscan',undefined,(ip,data)=>{
     if (data && data.hosts) {
       globallastscan=JSON.parse(JSON.stringify(data.stats));
       saveLastscan(globallastscan);
       appLogger.log('Full network scan is complete');
+      for (var i=0; i<Object.keys(globalhosts).length; i++){ // reset 'discovery' status after full scan.
+        if (globalhosts[Object.keys(globalhosts)[i]].ports=='discovery') {
+          globalhosts[Object.keys(globalhosts)[i]].ports=='nodata';
+        }
+      }
       saveGlobalhosts();
       if (typeof(callback)=='function') callback(true);
     }
@@ -704,6 +732,7 @@ function appInit() { // main function that loads parameters and starts everythin
       process.exit(1);
     }
     getLocalIP(); // get local ip and mac addresses
+    firstrun=false; // if appoptions.json exist then it is not the first run.
   }
   else {
     appLogger.log('Application options file is not found, using defaults');
@@ -726,20 +755,21 @@ function appInit() { // main function that loads parameters and starts everythin
       }
     }
     catch(err) {
-      appLogger.log('Hosts data is missing need to run full scan');
-      initScan();
+      globalhosts={};//clear variable in case of parsing errors.
+      appLogger.log('Error reading globalhosts.json file. Need a full network scan.');
+      if (!firstrun) initScan(); //run full network scan if it is not a first run only.
     }
     updateArp(); //update global ARP table after reading globalhosts file
-    var nowDate = new Date();
-    if (nowDate-mtime > 86400000){ // only re-scan network if it is older than 24 hours
-      appLogger.log('Hosts data is too old, need to rescan');
-      appLogger.log('Starting full network scan');
-      fullScan();
-    }
+    // var nowDate = new Date();
+    // if (nowDate-mtime > 86400000){ // only re-scan network if it is older than 24 hours
+      // appLogger.log('Hosts data is too old, need to rescan');
+      // appLogger.log('Starting full network scan');
+      // fullScan();
+    // }
   }
   else { //if globalhosts file doesn't exist, run from scratch, start fast scan, then slow scan
-    appLogger.log('Hosts data is missing need to run full scan');
-    initScan();
+    appLogger.log('Hosts data is missing. Need a full network scan');
+    if (!firstrun) initScan(); //run full network scan if it is not a first run only.
   }
   //scheduling automatic scan
   nmapCron = new cron.CronJob(appOptions.NMAP_CRON, function() {
@@ -753,7 +783,10 @@ function appInit() { // main function that loads parameters and starts everythin
   else appLogger.log('Scheduled nmap scan is disabled');
   appLogger.log ('Starting HTTP server');
   const serverHTTP = http.createServer(app).listen(appOptions.HTTPport, (err)=> { // start HTTP service and connect to Express app
-    if (!err) {appLogger.log("Server is listening on port "+appOptions.HTTPport)} 
+    if (!err) {
+      appLogger.log("Server is listening on port "+appOptions.HTTPport)
+      if (!process.env.RUNASSERVICE) open('http://localhost:'+appOptions.HTTPport); // open browser window if running interactively
+      }
     else {appLogger.error("Error starting server on port "+appOptions.HTTPport,err);}
   });
 }

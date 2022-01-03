@@ -9,7 +9,7 @@ User={{SERVICEACCOUNT}}
 Group={{SERVICEGROUP}}
 WorkingDirectory={{HOMENETMONPATH}}
 ExecStartPre=+{{HOMENETMONPATH}}/set_permissions.sh
-ExecStart={{HOMENETMONPATH}}/homenetmon.sh
+ExecStart={{HOMENETMONPATH}}/homenetmon.sh -s
 Restart=on-failure
 
 [Install]

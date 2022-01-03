@@ -59,7 +59,7 @@ function getCookie(cname) { //function to read a single cookie value
       return c.substring(name.length, c.length);
     }
   }
-  return "";
+  return false;
 }
 
 function setClipboard(value,elem) { //function to copy specified text to clipboard and change data tooltip for 1 sec to Copied
@@ -148,22 +148,44 @@ function generateMenu(){ // build menu with accounts and regions
   if (document.getElementById("TableFilter") != null && document.getElementById("TableFilter").value !=''){
     inputfiltervalue = document.getElementById("TableFilter").value; //get the value of input filter in the menu bar
   }
-  var menuitems='<div class="ui inverted top attached menu">\
-  <div class="item"><img src="/images/appicon.png"></div>\
-  <a class="ui item" id="rescan_button" onclick="requestRescan(false,\'subnet\')"><i class="globe icon"></i>Rescan network</a>\
-  <a class="ui item" onclick="displayScanStats()"><i class="info circle icon"></i>Last scan info</a>\
-  <a class="ui item" onclick="refreshTable()"><i class="sync alternate icon"></i>Refresh table</a>\
-  <div class="right menu">\
-  <div class="ui left icon item"><i class="filter icon"></i>&nbsp;<div class="ui transparent inverted input">&nbsp;<input id="TableFilter" type="text" placeholder="Filter..." onkeyup="filterTable()" onpaste="filterTable()" value="'+inputfiltervalue+'"></div></div>\
-  <a class="ui item" onclick="document.getElementById(\'TableFilter\').value=\'\';filterTable()"><i class="trash alternate outline icon"></i>Clear<br/>filter</a>\
-  <div class="ui disabled item" visible=false>-----------------</div>\
-  <a class="ui item" onclick="importexportDialog()"><i class="download icon"></i>Import/Export</a>\
-  <a class="ui item" onclick="settingsDialog()"><i class="settings icon"></i>&nbsp;Settings&nbsp;</a>\
-  </div></div>'
+  var menuitems='\
+  <div class="ui inverted top attached menu">\
+    <div class="ui simple dropdown item"><img src="/images/appicon.png"/>\
+      <div class="menu">\
+        <div class="item" onclick="refreshTable()"><i class="sync alternate icon"></i>Refresh table</div>\
+        <div class="item" onclick="displayScanStats()"><i class="info circle icon"></i>Last scheduled scan info</div>\
+        <div class="item" onclick="importexportDialog()"><i class="download icon"></i>Import/Export</div>\
+        <div class="item" onclick="settingsDialog()"><i class="settings icon"></i>Settings</div>\
+      </div>\
+    </div>\
+    <a class="item" id="rescan_button" onclick="scanDialog(false,\'subnet\')"><i class="globe icon"></i>Rescan network</a>\
+    <div class="right menu">\
+      <div class="item"><i class="filter icon"></i>&nbsp;<div class="ui transparent inverted input">&nbsp;<input id="TableFilter" type="text" placeholder="Filter..." onkeyup="filterTable()" onpaste="filterTable()" value="'+inputfiltervalue+'"></div></div>\
+      <a class="item" onclick="document.getElementById(\'TableFilter\').value=\'\';filterTable()"><i class="trash alternate outline icon"></i>Clear<br/>filter</a>\
+    </div>\
+  </div>'
   document.getElementById('MainMenu').innerHTML=menuitems;
   refreshTable();
-  checkStatus();
-  setInterval(checkStatus,10000);
+  checkNmapStatus();
+  checkStatus();// check if it is a first run
+  setInterval(checkNmapStatus,10000);
+}
+
+function checkStatus(){ // check if it was the first run of the app.
+  fetch("api/getsettings")
+    .catch((error)=>{})
+    .then(resp=>resp.json())
+    .then(settings=>{
+      //console.log(settings);
+      if (typeof(settings.firstrun)!='undefined' && settings.firstrun) {
+        //console.log ('first run');
+        setTimeout(function () { // delay 1 second before showing settings dialog
+          checkNmapStatus(function (state){
+            if (!state) settingsDialog(); //open settings dialog if nmap is not already running.
+          });
+        },1000);
+      }
+    }).catch((error)=>{responseDialog(undefined,['Error','Application is not available']);});
 }
 
 function refreshTable(){ //refresh table data
@@ -177,6 +199,7 @@ function generateTable(tabledata) { // create instances table contents
   if (Object.keys(tabledata).length==0){
     document.getElementById("TableContents").innerHTML ='<div class="ui inverted placeholder segment"><div class="ui inverted icon header"><i class="search icon"></i>There is no hosts information at this moment</div></div>';
     setTimeout(function(){refreshTable();},10000);
+    $('#TableDimmer').removeClass('active');
     return;
   }
   var out = '<table id="HostsTable" class="ui sortable inverted very compact selectable celled table">\
@@ -233,9 +256,12 @@ function updateTableRow(host,callback){
     avail_color="red";
   }
   var portslist=''; // generate list of ports
+  var portslistfilter='';
   if (host.ports!='nodata' && host.ports!='discovery'){
     var ports_tcp=[];
     var ports_udp=[];
+    var ports_tcp_filter=[];
+    var ports_udp_filter=[];
     for (var j=0;j<host.ports.length;j++){
       if (host.ports[j].protocol=='tcp') {
         var proto='http';
@@ -252,16 +278,20 @@ function updateTableRow(host,callback){
           proto='https';
         }
         ports_tcp.push('&nbsp;<span class="ui" data-tooltip="'+host.ports[j].service+'" data-variation="mini" data-inverted=""><a target="_blank" href="'+proto+'://'+host.ipaddr+':'+host.ports[j].number+'">'+host.ports[j].number+'</a></span>');
+        ports_tcp_filter.push(host.ports[j].service+host.ports[j].number+'tcp');
       }
       else {
         ports_udp.push('&nbsp;<span class="ui" data-tooltip="'+host.ports[j].service+'" data-variation="mini" data-inverted="">'+host.ports[j].number+'</span>');
+        ports_udp_filter.push(host.ports[j].service+host.ports[j].number+'udp');
       }
     }
     if (ports_tcp.length>0){
-      portslist+='TCP:&nbsp;'+ports_tcp.join(", ");
+      portslist+='TCP: '+ports_tcp.join(", ");
+      portslistfilter+=ports_tcp_filter.join(" ");
     }
     if (ports_udp.length>0){
-      portslist+='</br>UDP:&nbsp;'+ports_udp.join(", ");
+      portslist+='<br/>UDP: '+ports_udp.join(", ");
+      portslistfilter+=' '+ports_udp_filter.join(" ");
     }
   }
   else if (host.ports=='discovery') {
@@ -277,7 +307,7 @@ function updateTableRow(host,callback){
   //now generate main table
   var out='<td data-sort-value="'+ip2int(host.ipaddr)+'" textvalue="'+host.ipaddr+'">'+host.ipaddr+'&nbsp;\
   &nbsp;<span class="ui" data-tooltip="Copy" data-variation="mini" data-inverted=""><i class="ui copy outline icon link" onclick="setClipboard(\''+host.ipaddr+'\',this)"></i></span>\
-  </br><span class="ui" data-tooltip="Rescan" data-variation="mini" data-inverted=""><i class="ui sync alternate icon link" onclick="requestRescan(\''+mac+'\',\''+host.ipaddr+'\')"></i></span>\
+  </br><span class="ui" data-tooltip="Rescan" data-variation="mini" data-inverted=""><i class="ui sync alternate icon link" onclick="scanDialog(\''+mac+'\',\''+host.ipaddr+'\')"></i></span>\
   &nbsp;<span class="ui" data-tooltip="Ping" data-variation="mini" data-inverted=""><i class="ui heartbeat alternate icon link '+avail_color+'" onclick="requestUpdate(\''+mac+'\',\''+host.ipaddr+'\')"></i></span>\
   &nbsp;<span class="ui" data-tooltip="Delete" data-variation="mini" data-inverted=""><i class="ui x icon link" onclick="confirmDelete(\''+mac+'\',\''+host.ipaddr+'\')"></i></span>\
   </td>';
@@ -290,24 +320,29 @@ function updateTableRow(host,callback){
   var datasorthostname = host.name.toString().trim();
   if (datasorthostname == ""){ datasorthostname='zzzzzzzzzzzzzzzzzzzz'};
   out+='<td data-sort-value="'+datasorthostname+'" textvalue="'+host.name+'"><div class="ui inverted transparent input"><input placeholder="Noname" type="text" onkeyup="changeName(this,event,\''+mac+'\',this.value)" value="'+host.name+'"></div></td>';
-  var vendor = host.vendor ? '</br>Vendor: '+host.vendor : '</br>Vendor: unknown';
-  out+='<td>'+mac+'&nbsp;<span class="ui" data-tooltip="Copy" data-variation="mini" data-inverted=""><i class="ui copy outline icon link" onclick="setClipboard(\''+mac+'\',this)"></i></span>'+vendor+'</td>';
-  out+='<td>'+portslist+'</td>';
+  var vendor = host.vendor ? host.vendor : '';
+  if (vendor.toLowerCase == 'unknown') vendor='';
+  var vendortext=''
+  if (vendor !='') vendortext='</br>Vendor: '+vendor;
+  out+='<td textvalue="'+mac+' '+vendor+'">'+mac+'&nbsp;<span class="ui" data-tooltip="Copy" data-variation="mini" data-inverted=""><i class="ui copy outline icon link" onclick="setClipboard(\''+mac+'\',this)"></i></span>'+vendortext+'</td>';
+  out+='<td textvalue=" '+portslistfilter+' ">'+portslist+'</td>';
   tablerow.innerHTML = out;
   if (typeof(callback)=='function'){ callback(host); }
 }
 
-function checkStatus(){ // get instance and volumes data from the backend
-  //console.log('checkStatus');
+function checkNmapStatus(callback){ // check nmap running state
+  //console.log('checkNmapStatus');
   fetch("api/getnmaprun").catch((error)=>{})
   .then(response => response.json())
   .then(data => {
     if (data) {
       if (data.msg=='ok'){
         document.getElementById("rescan_button").innerHTML='<i class="globe icon"></i>Rescan network'
+        if (typeof(callback)=='function'){ callback(false); }
       }
       else {
         document.getElementById("rescan_button").innerHTML='<div class="ui active inline loader"></div>&nbsp;&nbsp;&nbsp;Scanning is in progress';
+        if (typeof(callback)=='function'){ callback(true); }
       }
     }
     else {
@@ -392,7 +427,7 @@ function requestDelete(macaddr,ipaddr){
   }).catch((error)=>{responseDialog(undefined,['Error','Application is not available']);});
 }
 
-function requestRescan(macaddr,ipaddr){
+function requestRescan(macaddr,ipaddr,options){
   //console.log('requestRescan');
   if (ipaddr !='subnet'){
     document.getElementById(ipaddr).children[5].innerHTML='<div class="ui inline active inline loader"></div>&nbsp;&nbsp;&nbsp;Scanning is in progress'
@@ -403,7 +438,8 @@ function requestRescan(macaddr,ipaddr){
   }
   document.getElementById("rescan_button").innerHTML='<div class="ui inline active inline loader"></div>&nbsp;&nbsp;&nbsp;Scanning is in progress';
   ////console.log(mac,name);
-  postData('api/nmapscan',{'ip':ipaddr}).then (data => {
+  
+  postData('api/nmapscan',{'ip':ipaddr,'options':options}).then (data => {
     ////console.log(data);
     if (typeof(data.msg) !='undefined'){
       ////console.log(data.msg)
@@ -500,24 +536,38 @@ function settingsDialog(){ // show settings dialog
     .then(resp=>resp.json())
     .then(settings=>{
       //console.log(settings);
-      var subnet=settings.subnet ? settings.subnet : '192.168.1.0';
       var netmask=settings.netmask ? settings.netmask : '24';
+      var subnet=settings.subnet ? settings.subnet+'/'+netmask : '192.168.1.0/'+netmask;
       var speed=settings.speed ? settings.speed : 5;
-      var ports=settings.ports ? settings.ports : 'known';
+      var ports=settings.ports ? settings.ports : '1000';
       var cronexpr=settings.cronexpr ? settings.cronexpr : '0 3 * * *';
       var cronenable=settings.cronenable ? settings.cronenable : false;
+      var subnets=settings.localsubnet ? settings.localsubnet : ['192.168.1.0/24'];
       var contents='<div class="ui header" style="background-color:#4d4d4d; color:#f2f2f2"><i class="settings icon"></i>&nbsp;Settings</div>\
         <div class="content" style="background-color:#4d4d4d; color:#f2f2f2">\
           <form class="ui form segment" action="/api/savesettings" method="post" style="background-color:#4d4d4d; color:#f2f2f2">\
+          <h4 class="ui dividing header" style="color:#f2f2f2">Network settings</h4>\
             <div class="two fields">\
               <div class="field">\
                 <label style="color:#f2f2f2">Subnet address</label>\
-                <input type="text" id="input_subnet" placeholder="192.168.1.0" name="subnet">\
+                <select class="ui fluid dropdown" id="input_subnet" name="subnet" onchange="document.getElementById(\'input_netmask\').value = document.getElementById(\'input_subnet\').value.split(\'/\')[1]">';
+      for (var i=0;i<subnets.length;i++){
+        contents+='<option value="'+subnets[i]+'">'+subnets[i].split("/")[0]+'</option>';
+      }
+      contents+='</select>\
               </div>\
               <div class="field">\
                 <label style="color:#f2f2f2">Netmask</label>\
-                <input type="text" id="input_netmask" placeholder="24 or 255.255.255.0" name="netmask">\
+                <input type="text" id="input_netmask" placeholder="24" name="netmask">\
               </div>\
+            </div>\
+            <h4 class="ui dividing header" style="color:#f2f2f2">Scheduled scan settings</h4>\
+            <div class="field">\
+                <div class="field">\
+                  <label style="color:#f2f2f2">Scheduled scan time</label>\
+                  <input type="text" id="input_cron" placeholder="0 0 * * *" name="cronexpr">\
+                  <label style="color:#f2f2f2">(Cron expression: minute hour day month weekday)</label>\
+                </div>\
             </div>\
             <div class="two fields">\
                 <div class="field">\
@@ -542,21 +592,15 @@ function settingsDialog(){ // show settings dialog
                 </div>\
             </div>\
             <div class="field">\
-                <div class="field">\
-                  <label style="color:#f2f2f2">Scheduled scan time</label>\
-                  <input type="text" id="input_cron" placeholder="0 0 * * *" name="cronexpr">\
-                  <label style="color:#f2f2f2">(Cron expression: minute hour day month weekday)</label>\
-                </div>\
-            </div>\
-            <div class="field">\
               <div class="field">\
               <div class="ui toggle checkbox">\
                 <input type="checkbox" tabindex="0" id="checkbox_cron" checked=true name="cronenable">\
                 <label style="color:#f2f2f2 !important">Enable scheduled scan</label>\
               </div>\
               </div>\
-            </div>\
-          </form>\
+            </div>';
+      if (typeof(settings.firstrun)!='undefined' && settings.firstrun) contents+='<input type="checkbox" hidden checked=true name="firstrun">';
+      contents+='</form>\
         </div>\
         <div class="ui actions"  style="background-color:#4d4d4d; color:#f2f2f2">\
           <div class="ui green button" onclick="submitForm()">Apply</div>\
@@ -587,14 +631,6 @@ function activateSettingsForm() {
         type: 'regExp',
         value: /^((((\d+,)+\d+|(\d+(\/|-)\d+)|\d+|\*) ?){5})$/,
         prompt: 'Please enter a valid cron expression'
-      }]
-      },
-      subnet:{
-      identifier: 'subnet',
-      rules: [{
-        type: 'regExp',
-        value: /^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?))$/,
-        prompt: 'Please enter a valid subnet address'
       }]
       },
       netmask:{
@@ -658,7 +694,7 @@ function importexportDialog(){ // show import/export dialog
   $('.ui.tiny.modal').modal('setting', 'closable', true);
   $('.ui.tiny.modal').modal('show');
 }
-function saveHostsJSON(){
+function saveHostsJSON(){ 
   //console.log('saveHostsJSON');
   fetch("api/gethosts").catch((error)=>{})
   .then(response => response.json())
@@ -697,6 +733,74 @@ function convertHostsCSV(data){
     csv+='"'+[host.ipaddr,state,host.dnsnames.join(','),host.netbiosname,host.name,host.mac,host.vendor,ports_tcp.join(','),ports_udp.join(',')].join('","')+'"\r\n';
   }
   return csv;
+}
+
+function scanDialog(macaddr,ipaddr){ // show scan settings dialog
+  document.getElementById('modal_contents').setAttribute("class", "ui tiny modal");
+  document.getElementById('modal_contents').setAttribute("style", "background-color:#4d4d4d; color:#f2f2f2");
+  var speed=getCookie('scanspeed') ? getCookie('scanspeed') : '5';
+  var ports=getCookie('scanports') ? getCookie('scanports') : '1000';
+  if (ipaddr=='subnet') {
+    speed=getCookie('scanspeedsub') ? getCookie('scanspeedsub') : '5';
+    ports=getCookie('scanportssub') ? getCookie('scanportssub') : '1000';
+  }
+  var contents='<div class="ui header" style="background-color:#4d4d4d; color:#f2f2f2"><i class="sync alternate icon"></i>&nbsp;Scan '+ipaddr+'</div>\
+    <div class="content" style="background-color:#4d4d4d; color:#f2f2f2">\
+      <form class="ui form segment" style="background-color:#4d4d4d; color:#f2f2f2">\
+        <input type="text" id="input_ipaddr" hidden disabled value="'+ipaddr+'" name="ipaddr">\
+        <input type="text" id="input_macaddr" hidden disabled value="'+macaddr+'" name="macaddr">\
+        <div class="two fields">\
+            <div class="field">\
+            <label style="color:#f2f2f2">Scan speed</label>\
+            <select class="ui fluid dropdown" id="select_speed" name="speed">\
+              <option value="5">Fast (may skip ports)</option>\
+              <option value="4">Normal (might skip ports)</option>\
+              <option value="3">Slow (thorough)</option>\
+            </select>\
+            </div>\
+            <div class="field">\
+            <label style="color:#f2f2f2">Number of ports</label>\
+            <select class="ui fluid dropdown" id="select_ports" name="ports">'
+  if (ipaddr=='subnet') contents+='<option value="0">Quick network swipe without port scan</option>'
+  contents+='<option value="100">100 ports (fastest)</option>\
+              <option value="1000">1000 ports (fast)</option>\
+              <option value="1500">1500 ports (moderate)</option>\
+              <option value="2000">2000 ports (slower)</option>\
+              <option value="5000">5000 ports (slow)</option>\
+              <option value="10000">10000 ports (very slow)</option>\
+              <option value="65535">All 65535 ports (insanely slow)</option>\
+            </select>\
+            </div>\
+        </div>\
+      </form>\
+    </div>\
+    <div class="ui actions"  style="background-color:#4d4d4d; color:#f2f2f2">\
+      <div class="ui green button" onclick="submitScanForm()">Scan</div>\
+      <div class="ui red cancel button">Cancel</div>\
+    </div>';
+  document.getElementById('modal_contents').innerHTML=contents;
+  document.getElementById('select_speed').value=speed;
+  document.getElementById('select_ports').value=ports;
+  $('.ui.tiny.modal').modal('setting', 'closable', true);
+  $('.ui.tiny.modal').modal('show');
+  return;
+}
+
+function submitScanForm() {
+  $('.ui.tiny.modal').modal('hide');
+  var speed = document.getElementById('select_speed').value;
+  var ports = document.getElementById('select_ports').value;
+  var ipaddr = document.getElementById('input_ipaddr').value;
+  var macaddr = document.getElementById('input_macaddr').value;
+  if (ipaddr == 'subnet') {
+    setCookie('scanportssub',ports,31557600000);
+    setCookie('scanspeedsub',speed,31557600000);
+  }
+  else {
+    setCookie('scanports',ports,31557600000);
+    setCookie('scanspeed',speed,31557600000);
+  }
+  requestRescan(macaddr,ipaddr,{'speed':speed,'ports':ports});
 }
 
 function appInit() { // main app that is called from the html page to initialize the frontend app

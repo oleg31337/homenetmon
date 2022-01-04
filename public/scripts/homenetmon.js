@@ -5,11 +5,8 @@ var activedimmer='\
     <div class="ui text loader">Loading</div>\
     </div>'
 var globalsetinterval={}; //global object of timeout functions
-const DEBUG=1;
+var globalnmapstatus=false; //global nmap status flag 
 
-//function ip2int(ip) { // convert IP address to 32 bit decimal number
-//    return ip.split('.').reduce(function(ipInt, octet) { return (ipInt<<8) + parseInt(octet, 10)}, 0) >>> 0;
-//}
 function ip2int(ip) { // Convert decimal number representation to IP dotted address
     var d = ip.split('.');
     return ((((((+d[0])*256)+(+d[1]))*256)+(+d[2]))*256)+(+d[3]);
@@ -24,6 +21,7 @@ function int2ip(num) { // Convert IP dotted address to representing decimal numb
     }
     return ip;
 }
+
 function secondsToHms(d) {
     d = Number(d);
     var h = Math.floor(d / 3600);
@@ -129,14 +127,20 @@ function errorTableContents(errmsg){
   document.getElementById("TableContents").innerHTML ='<div class="ui inverted placeholder segment"><div class="ui inverted icon header"><i class="exclamation triangle icon"></i>'+errmsg+'</div></div>';
   $('#TableDimmer').removeClass('active');  
 }
+
 function getTableData(){ // get instance and volumes data from the backend
   //console.log('getTableData');
   fetch("api/gethosts").catch((error)=>{})
   .then(response => response.json())
   .then(data => {
     generateTable(data);
-  }).catch((error)=>{responseDialog(undefined,['Error','Application is not available']);});
+  })
+  .catch((error)=>{
+    responseDialog(undefined,['Error','Application is not available']);
+    errorTableContents('Application is not available');
+  });
 }
+
 function clearTableData(){
   //console.log('clearTableData');
   $('#TableDimmer').addClass('active');
@@ -338,10 +342,15 @@ function checkNmapStatus(callback){ // check nmap running state
     if (data) {
       if (data.msg=='ok'){
         document.getElementById("rescan_button").innerHTML='<i class="globe icon"></i>Rescan network'
+        if (globalnmapstatus){
+          refreshTable();
+          globalnmapstatus=false;
+        }
         if (typeof(callback)=='function'){ callback(false); }
       }
       else {
         document.getElementById("rescan_button").innerHTML='<div class="ui active inline loader"></div>&nbsp;&nbsp;&nbsp;Scanning is in progress';
+        globalnmapstatus=true;
         if (typeof(callback)=='function'){ callback(true); }
       }
     }

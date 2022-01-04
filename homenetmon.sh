@@ -5,11 +5,16 @@ fi
 scriptpath="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 
 nodepath=$(type -p node)
+npmpath=$(type -p npm)
 nmappath=$(type -p nmap)
 npingpath=$(type -p nping)
 
 if [ -z "$nodepath" ];then
   echo -e '\033[0;31mError! Node.js is not installed. Please install it prior running application.\033[0m'
+  exit 1
+fi
+if [ -z "$npmpath" ];then
+  echo -e '\033[0;31mError! Npm is not installed. Please install it prior running application.\033[0m'
   exit 1
 fi
 if [ -z "$nmappath" ];then
@@ -38,14 +43,15 @@ if [ "$npingcap" != "/usr/bin/nping = cap_net_bind_service,cap_net_admin,cap_net
   exit 1
 fi
 
-if [ "$1" -eq "-d" -or "$1" -eq "--debug" ]
+if [ "$1" == "-d" -o "$1" == "--debug" -o "$2" == "-d" -o "$2" == "--debug" ];then
     export DEBUG=true
 fi
 
-if [ "$1" -eq "-s" -or "$1" -eq "--service" ]
+if [ "$1" == "-s" -o "$1" == "--service" -o "$2" == "-s" -o "$2" == "--service" ];then
     export RUNASSERVICE=true
 fi
 
 cd $scriptpath
+$npmpath ci
 $nodepath app.js
 

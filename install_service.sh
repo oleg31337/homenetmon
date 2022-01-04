@@ -57,7 +57,7 @@ function uninstall-svc(){
   systemctl daemon-reload
 }
 
-if [ "$1" = "-u" -o "$1" = "-U" -o "$1" = "-uninstall" -o "$1" = "uninstall" ];then
+if [ "$1" = "-u" -o "$1" = "-U" -o "$1" = "--uninstall" -o "$1" = "-uninstall" -o "$1" = "uninstall" ];then
   echo Uninstalling service
   uninstall-svc
   exit 0

@@ -9,6 +9,8 @@ const ping = require ("ping");
 const parseString = require('xml2js').parseString;
 const cron = require('cron');
 const open = require ('open');
+const gw = require('default-gateway');
+const ip = require('ip');
 
 const appLogger = require ('./applogger.js'); //logging routines
 
@@ -24,6 +26,9 @@ const fileStoreOptions = { // session file store options.
 var localip=[]; //array of local ip addresses
 var localmac=[]; // array of corresponding local mac addresses
 var localsubnet=[]; // array of corresponding subnets
+var localprimaryip=''; //primary local interface
+var localprimarysubnet=''; //primary local subnet
+
 var appOptions = {}; // global app options
 var globalhosts={}; // in-memory list of all hosts
 var globallastscan={};// in-memory last scan stats
@@ -116,21 +121,24 @@ function pingHost(ipaddr,callback) {// ICMP Ping host function. Parameters: ip, 
   try {
     ping.sys.probe(ipaddr, function (isAlive) {
       if (!isAlive){
-        appLogger.debug(ipaddr + ": Unreachable");
+        appLogger.debug('ICMP ping '+ipaddr + " Unreachable");
         if (typeof(globalarptable[ipaddr])!='undefined' && globalhosts[globalarptable[ipaddr]]) globalhosts[globalarptable[ipaddr]].latency=-1;
         if (typeof(callback)=='function') callback(ipaddr,-1);
         return;
       }
       else {
-        appLogger.debug(ipaddr + ": Alive");
-        if (typeof(globalarptable[ipaddr])!='undefined') globalhosts[globalarptable[ipaddr]].latency=1;
+        appLogger.debug('ICMP ping '+ipaddr + " Alive");
+        if (typeof(globalarptable[ipaddr])!='undefined') {
+          globalhosts[globalarptable[ipaddr]].latency=1;
+          globalhosts[globalarptable[ipaddr]].lastseen=new Date().getTime(); //update lastseen
+        }
         if (typeof(callback)=='function') callback(ipaddr,1);
         return;
       }
     },options);
   }
   catch (err){
-    appLogger.debug('Error pinging '+ipaddr +': '+ err);
+    appLogger.debug('ICMP ping error '+ipaddr +': '+ err);
     if (typeof(globalarptable[ipaddr])!='undefined') globalhosts[globalarptable[ipaddr]].latency=-1;
     if (typeof(callback)=='function') callback(ipaddr,-1);
     return;
@@ -139,7 +147,6 @@ function pingHost(ipaddr,callback) {// ICMP Ping host function. Parameters: ip, 
 
 app.get('/api/gethosts', (req, res, next) => {// Get hosts endpoint for all hosts.
   if (Object.keys(globalhosts).length>0){
-    setTimeout(function (){ saveGlobalhosts(); }, 30000); // save global hosts when latency info is updated
     return res.status(200).type('application/json').send(JSON.stringify(globalhosts)).end;
   }
   else {
@@ -274,7 +281,9 @@ app.get('/api/getsettings', (req, res, next) => { // Get settings endpoint. outp
     settings.cronexpr=appOptions.NMAP_CRON ? appOptions.NMAP_CRON : '0 3 * * *';
     settings.cronenable=(typeof(appOptions.NMAP_CRON_ENABLE)!='undefined') ? appOptions.NMAP_CRON_ENABLE : true; // this one is tricky as it is boolean
     settings.localsubnet=localsubnet;
-    if (firstrun) settings.firstrun=true; // let frontend know if it is a first run.
+    settings.localprimaryip=localprimaryip;
+    settings.localprimarysubnet=localprimarysubnet;
+    if (firstrun==true) settings.firstrun=true; // let frontend know if it is a first run.
     return res.status(200).type('application/json').send(JSON.stringify(settings)).end;  
   }
   else {
@@ -295,7 +304,7 @@ app.post('/api/nmapscan', (req, res, next) => { // Nmap scan endpoint. Parameter
     if (!checkNmappid()) {
       if (req.body.ip=='subnet'){
             portScan(req.body.ip, req.body.type, req.body.options);
-            return res.status(200).type('application/json').send('{"msg":["Network scan started","It will take some time to complete"]}').end;
+            return res.status(200).type('application/json').send('{"msg":["Subnet scan started","It will take some time to complete"]}').end;
           }
       if (globalarptable[req.body.ip]){
         globalhosts[globalarptable[req.body.ip]].scanning=true; //set host in scanning mode (if found in arp table of course)
@@ -362,25 +371,27 @@ function pingArp(ipaddr,callback){ //Nping ARP pinger function. Callback output 
       //console.log('nping exec');
       let re = new RegExp('.+ARP reply '+ipaddr.split('.').join('\\.')+' is at (.+)');
       if (error){
-        appLogger.error('Error in pingArp: '+error.toString());
+        appLogger.error('ARP ping error '+ipaddr+' '+error.toString());
         if (typeof(callback)=='function') callback(ipaddr,false,'pingArp: '+error.toString());
         return;
       }
-      //console.log(stdout);
-      //console.log(ipaddr.split('.').join('\\.'));
-      //console.log((stdout.toString()).match(re)[1]);
       if (stderr){
-        appLogger.error('Error in pingArp: '+stderr);
+        appLogger.error('ARP ping error '+ipaddr+' '+stderr);
         if (typeof(callback)=='function') callback(ipaddr,false,'pingArp: '+stderr.toString());
         return;
       }
       if (re.test(stdout.toString())){ // check the stdout for ARP reply
         var macaddr=(stdout.toString()).match(re)[1];
-        if (typeof(globalhosts[macaddr])!='undefined') globalhosts[macaddr].latency=1;
+        if (typeof(globalhosts[macaddr])!='undefined') {
+          globalhosts[macaddr].latency=1;
+          globalhosts[macaddr].lastseen=new Date().getTime(); //update lastseen
+        }
+        appLogger.debug('ARP ping '+ipaddr+' Available');
         if (typeof(callback)=='function') callback(ipaddr,macaddr,false);
         return;
       }
       else{
+        appLogger.debug('ARP ping '+ipaddr+' Unreachable');
         if (typeof(callback)=='function') callback(ipaddr,false,false);
         return;
       }
@@ -438,7 +449,7 @@ function portScan(ipaddr,type,options,callback){ //Function to perform port scan
   if (typeof(ipaddr) != 'undefined' && ipaddr=='subnet'){
     ipaddr=appOptions.SUBNET;
     scanscope='subnet';
-    appLogger.log('Starting on-demand full subnet network scan');
+    appLogger.log('Starting full subnet network scan');
   }
   if (typeof(ipaddr) != 'undefined'){
     nmapruntime = exec(nmapcmd+' '+ipaddr, {maxBuffer: 10485760, timeout: 86400000}, (error, stdout, stderr) => {
@@ -453,25 +464,28 @@ function portScan(ipaddr,type,options,callback){ //Function to perform port scan
         return;
       }
       //var data = convert.xml2js(stdout,{compact: true, spaces: 0});
-      parseString(stdout,{attrkey:'p',charkey:'t'}, (err, result)=>{ // convert from XML to JavaScript object
-        if (err) {
-          appLogger.error("Error parsing nmap results: "+err);
-          if (typeof(callback)=='function') callback(ipaddr,false);
-          return;
-        }
-        //console.dir(result);
-        result.scantype=type;
-        result.scanscope=scanscope;
-        var parsedhosts=parseNmapOut(result);
-        saveGlobalhosts();
-        updateArp();
-        if (scanscope=='subnet'){
-          globallastscan=JSON.parse(JSON.stringify(parsedhosts.stats)); //update globallastscan var
-          saveLastscan(globallastscan); //save globallastscan
-          appLogger.log('Full on-demand network scan is complete');
-        }
-        if (typeof(callback)=='function') callback(ipaddr,parsedhosts,false);
-        //console.log(parsedhosts);
+      mdnsScan((mdnshosts)=>{ //run mDNS scan before parsing to include it's results in name resolution
+        parseString(stdout,{attrkey:'p',charkey:'t'}, (err, result)=>{ // convert from XML to JavaScript object
+          if (err) {
+            appLogger.error("Error parsing nmap results: "+err);
+            if (typeof(callback)=='function') callback(ipaddr,false,err);
+            return;
+          }
+          //console.dir(result);
+          result.scantype=type;
+          result.scanscope=scanscope;
+          result.mdnshosts=mdnshosts;
+          var parsedhosts=parseNmapOut(result);
+          saveGlobalhosts();
+          updateArp();
+          if (scanscope=='subnet'){
+            globallastscan=JSON.parse(JSON.stringify(parsedhosts.stats)); //update globallastscan var
+            saveLastscan(globallastscan); //save globallastscan
+            appLogger.log('Full network scan is complete');
+          }
+          if (typeof(callback)=='function') callback(ipaddr,parsedhosts,false);
+          //console.log(parsedhosts);
+        });
       });
       
     });
@@ -498,10 +512,15 @@ function parseNmapOut(data){ // Function to parse json nmap output converted fro
       var dnsnames = [];
       if (typeof(hosts[i].hostnames[0].hostname) != 'undefined') {
         for (var nn=0;nn<hosts[i].hostnames[0].hostname.length;nn++){
-          dnsnames.push(hosts[i].hostnames[0].hostname[nn].p.name);
+          if (hosts[i].hostnames[0].hostname[nn].p.name.toString().trim().length >= 3){ // only use hostname if it is more than 3 in length.
+            dnsnames.push(hosts[i].hostnames[0].hostname[nn].p.name.toString().trim());
+          }
         }
       }
-      else dnsnames=[''];
+      else dnsnames=[];
+      if (typeof(data.mdnshosts[ip])!='undefined') {
+        dnsnames.push(data.mdnshosts[ip].host.toString().trim());
+      }
       var netbiosname='';
       if (typeof(hosts[i].hostscript) != 'undefined'){
         //console.log(JSON.stringify(hosts[i].hostscript[0].script[0].p.output));
@@ -514,6 +533,9 @@ function parseNmapOut(data){ // Function to parse json nmap output converted fro
         }
       }
       if (typeof(netbiosname)=='undefined' || netbiosname=='<unknown>') netbiosname='';
+      if (typeof(data.mdnshosts[ip])!='undefined' && data.mdnshosts[ip].name !='' && netbiosname=='') {
+        netbiosname=data.mdnshosts[ip].name;
+      }
       var vendor = hosts[i].address[1] ? hosts[i].address[1].p.vendor : 'unknown';
       var ports=[];
       if (data.scantype!='discovery') {
@@ -536,28 +558,33 @@ function parseNmapOut(data){ // Function to parse json nmap output converted fro
           else ports='nodata';
         }
       }
-      //update hosts information but don't erase the name
-      if (typeof(parsedhosts.hosts[mac])=='undefined'){ parsedhosts.hosts[mac]={} } //if new host then define as empty object
+      //update hosts information
+      if (typeof(parsedhosts.hosts[mac])=='undefined'){  //if new host then define an object and add first seen date.
+        parsedhosts.hosts[mac]={}; 
+        parsedhosts.hosts[mac].firstseen=new Date().getTime();
+      }
+      parsedhosts.hosts[mac].lastseen=new Date().getTime(); //set last seen date to now
+      parsedhosts.hosts[mac].lastscanned=new Date().getTime(); //set last scanned date to now
       parsedhosts.hosts[mac].ipaddr=ip;
       parsedhosts.hosts[mac].mac=mac;
       parsedhosts.hosts[mac].dnsnames=dnsnames;
       parsedhosts.hosts[mac].netbiosname=netbiosname;
       parsedhosts.hosts[mac].ports=ports;
       parsedhosts.hosts[mac].vendor=vendor;
-      parsedhosts.hosts[mac].latency=-1; // set status to -1 as it was just scanned and we don't know if it accepts ICMP
+      parsedhosts.hosts[mac].latency=1; // set latency to 1 as 
       parsedhosts.hosts[mac].scanning=false; //means the scanning is complete
-      parsedhosts.hosts[mac].name = globalhosts[mac] ? globalhosts[mac].name : '';
-      if (typeof(parsedhosts.hosts[mac].name)=='undefined' || parsedhosts.hosts[mac].name=='') { //check if name exists in globalhosts
+      parsedhosts.hosts[mac].name = globalhosts[mac] ? globalhosts[mac].name : ''; // get name from globalhosts file (if exists)
+      if (typeof(parsedhosts.hosts[mac].name)=='undefined' || parsedhosts.hosts[mac].name=='') { //assign name if was not yet defined
         if (netbiosname != '') {
           parsedhosts.hosts[mac].name=netbiosname;
         }
-        else if (dnsnames[0] != '') {
+        else if (typeof(dnsnames[0])!='undefined' && dnsnames[0] != '') {
           parsedhosts.hosts[mac].name=dnsnames[0];
         }
         else parsedhosts.hosts[mac].name='';
       }
       //update globalhosts list
-      globalhosts[mac]=JSON.parse(JSON.stringify(parsedhosts.hosts[mac]));
+      globalhosts[mac]=JSON.parse(JSON.stringify(parsedhosts.hosts[mac])); // do a full recursive object clone
     }
   }
   parsedhosts.stats = {
@@ -568,7 +595,38 @@ function parseNmapOut(data){ // Function to parse json nmap output converted fro
   return parsedhosts;
 }
 
-function getLocalIP(callback){ // Function to get local IP addressese and corresponding MAC addresses and update global variables.
+function mdnsScan(callback){
+  var bonjour = require ('bonjour')({interface: localprimaryip, multicast: true, loopback: true, reuseAddr: true});
+  var browsertcp = bonjour.find({txt:{'binary': false},protocol:'tcp'});
+  var browserudp = bonjour.find({txt:{'binary': false},protocol:'udp'});
+  browsertcp.start();
+  browserudp.start();
+  appLogger.debug('Starting mDNS scan');
+  setTimeout(function () {
+    var hosts = {};
+    //console.log('tcp: ',browsertcp.services.length);
+    //console.log('udp: ',browserudp.services.length);
+    var services = browsertcp.services.concat(browserudp.services);
+    //console.log(JSON.stringify(services));
+    browsertcp.stop();
+    browserudp.stop();
+    bonjour.destroy();
+    for (var i=0;i<services.length;i++){
+      for (var j=0;j<services[i].addresses.length;j++){
+        if (validateIP(services[i].addresses[j])){
+          if (typeof(hosts[services[i].addresses[j]])=='undefined') hosts[services[i].addresses[j]]={};
+          hosts[services[i].addresses[j]].name=services[i].name ? services[i].name : '';
+          hosts[services[i].addresses[j]].host=services[i].host ? services[i].host : '';
+        }
+      }
+    }
+    appLogger.debug('mDNS scan complete. found '+Object.keys(hosts).length+' hosts');
+    //console.log(hosts);
+    if (typeof(callback)=='function') callback(hosts);
+  },3000); // 3 seconds for scanning seem to be the optimal time for scanning entire subnet.
+}
+
+async function getLocalIP(callback){ // Function to get local IP addressese and corresponding MAC addresses and update global variables.
   var interfaces=os.networkInterfaces(); //get the list of local interfaces
   for (var e=0;e<Object.keys(interfaces).length;e++){ //extract local interfaces ip and mac addresses
     //console.log(JSON.stringify(interfaces[Object.keys(interfaces)[e]]));
@@ -581,6 +639,15 @@ function getLocalIP(callback){ // Function to get local IP addressese and corres
       }
     }
   }
+  const {gateway,gwinterface} = gw.v4.sync();
+  for (var i=0; i<localsubnet.length; i++){
+    if (ip.cidrSubnet(localsubnet[i]).contains(gateway)) {
+      localprimaryip = localip[i];
+      localprimarysubnet = localsubnet[i];
+    }
+  }
+  appLogger.debug('Primary IP: '+localprimaryip);
+  appLogger.debug('Primary Subnet: '+ localprimarysubnet);
   appLogger.debug('Local IPs: '+localip);
   appLogger.debug('Local MACs: '+localmac);
   appLogger.debug('Local subnets: '+localsubnet);
@@ -652,37 +719,38 @@ function readLastscan(callback){ // Function to read last scan information from 
 
 function initScan(){ // Function to do initial network swipe before full scan
   appLogger.log('Starting quick network swipe');
-  portScan(appOptions.SUBNET,'discovery',undefined,(ip,data)=>{
-    if (data && data.hosts) {
+  portScan(appOptions.SUBNET,'discovery',undefined,(ip,data,err)=>{
+    if (!err) {
       globallastscan=JSON.parse(JSON.stringify(data.stats));
       saveLastscan(globallastscan);
-      saveGlobalhosts();
       appLogger.log('Quick network swipe is complete');
       appLogger.log('Starting full network scan');
       firstrun=false;
       fullScan();
     }
     else {
-      appLogger.error('Error running quick network swipe');
+      appLogger.error('Error running quick network swipe:',err);
     }
   });
+}
 
+async function resetHostStatus(){ // reset 'discovery' status
+  for (var i=0; i<Object.keys(globalhosts).length; i++){
+    if (globalhosts[Object.keys(globalhosts)[i]].ports=='discovery') {
+      globalhosts[Object.keys(globalhosts)[i]].ports='nodata';
+      globalhosts[Object.keys(globalhosts)[i]].scanning=false;
+    }
+  }
 }
 
 function fullScan(callback){ // Function to perform full subnet network scan
-  for (var h=0;h<Object.keys(globalhosts).length;h++){ // set status of all hosts to 0
-    globalhosts[Object.keys(globalhosts)[h]]['latency']=-1;
-  }
   portScan(appOptions.SUBNET,'portscan',undefined,(ip,data)=>{
     if (data && data.hosts) {
       globallastscan=JSON.parse(JSON.stringify(data.stats));
       saveLastscan(globallastscan);
       appLogger.log('Full network scan is complete');
-      for (var i=0; i<Object.keys(globalhosts).length; i++){ // reset 'discovery' status after full scan.
-        if (globalhosts[Object.keys(globalhosts)[i]].ports=='discovery') {
-          globalhosts[Object.keys(globalhosts)[i]].ports=='nodata';
-        }
-      }
+      firstrun=false;
+      resetHostStatus(); // reset discovery status of hosts
       saveGlobalhosts();
       if (typeof(callback)=='function') callback(true);
     }
@@ -737,7 +805,7 @@ function appInit() { // main function that loads parameters and starts everythin
   else {
     appLogger.log('Application options file is not found, using defaults');
     getLocalIP((ips,macs,subnets)=>{ // get local ip and mac and populate subnet value in appOptions
-      appOptions.SUBNET=subnets[0] ? subnets[0] : '192.168.1.0/24';
+      appOptions.SUBNET=localprimarysubnet ? localprimarysubnet : '192.168.1.0/24';
       saveAppOptions(appOptions,function(ok,err){
         if (ok) appLogger.log('Application options file was created');
         if (err) appLogger.error('Error saving application options file',err);

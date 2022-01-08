@@ -181,7 +181,7 @@ function checkStatus(){ // check if it was the first run of the app.
     .then(resp=>resp.json())
     .then(settings=>{
       //console.log(settings);
-      if (typeof(settings.firstrun)!='undefined' && settings.firstrun) {
+      if (typeof(settings.firstrun)!='undefined' && (settings.firstrun=='true' || settings.firstrun==true)) {
         //console.log ('first run');
         setTimeout(function () { // delay 1 second before showing settings dialog
           checkNmapStatus(function (state){
@@ -198,7 +198,7 @@ function refreshTable(){ //refresh table data
   getTableData();
 }
 
-function generateTable(tabledata) { // create instances table contents
+async function generateTable(tabledata) { // create instances table contents
   //console.log("generateTable");
   if (Object.keys(tabledata).length==0){
     document.getElementById("TableContents").innerHTML ='<div class="ui inverted placeholder segment"><div class="ui inverted icon header"><i class="search icon"></i>There is no hosts information at this moment</div></div>';
@@ -209,11 +209,11 @@ function generateTable(tabledata) { // create instances table contents
   var out = '<table id="HostsTable" class="ui sortable inverted very compact selectable celled table">\
   <thead><tr>\
   <th class="default-sort filtrable">IP Address</th>\
-  <th class="filtrable">DNS Name</th>\
-  <th class="filtrable">NetBIOS Name</th>\
-  <th class="filtrable">Name</th>\
+  <th class="filtrable">DNS/mDNS hostname</th>\
+  <th class="filtrable">NetBIOS/mDNS name</th>\
+  <th class="filtrable">Custom name</th>\
   <th class="filtrable">MAC Address</th>\
-  <th class="no-sort filtrable">Ports</th>\
+  <th class="no-sort filtrable">Open ports</th>\
   </tr>\
   </thead><tbody id="hoststablebody">';
   out += "</tbody></table>"
@@ -222,7 +222,7 @@ function generateTable(tabledata) { // create instances table contents
   for(var i = 0; i < Object.keys(tabledata).length; i++) {
     var mac=Object.keys(tabledata)[i];
     var host=tabledata[Object.keys(tabledata)[i]];
-    updateTableRow(host);
+    await updateTableRow(host);
     //finally initiate automatic refresh
     let ipaddr=host.ipaddr;
     let macaddr=mac;
@@ -240,7 +240,9 @@ function generateTable(tabledata) { // create instances table contents
   $('#TableDimmer').removeClass('active');
 }
 
-function updateTableRow(host,callback){
+async function updateTableRow(host,callback){
+  //console.log("updateTableRow");
+  //console.log(host);
   mac=host.mac;
   tbody=document.getElementById("hoststablebody");
   if (!document.getElementById(host.ipaddr)){
@@ -261,7 +263,7 @@ function updateTableRow(host,callback){
   }
   var portslist=''; // generate list of ports
   var portslistfilter='';
-  if (host.ports!='nodata' && host.ports!='discovery'){
+  if (host.ports!='nodata' && host.ports!='discovery' && host.ports.length>0){
     var ports_tcp=[];
     var ports_udp=[];
     var ports_tcp_filter=[];
@@ -302,7 +304,7 @@ function updateTableRow(host,callback){
     portslist='<div class="ui inverted placeholder"><div class="paragraph">Scanning...</div></div>';
   }
   else {
-    portslist='No open ports found. Try to rescan with more ports in scope.';
+    portslist='No open ports found. Try to rescan with more ports in scope or lower speed.';
   }
   if (host.scanning){
     //vail_color="gray";
@@ -315,15 +317,16 @@ function updateTableRow(host,callback){
   &nbsp;<span class="ui" data-tooltip="Ping" data-variation="mini" data-inverted=""><i class="ui heartbeat alternate icon link '+avail_color+'" onclick="requestUpdate(\''+mac+'\',\''+host.ipaddr+'\')"></i></span>\
   &nbsp;<span class="ui" data-tooltip="Delete" data-variation="mini" data-inverted=""><i class="ui x icon link" onclick="confirmDelete(\''+mac+'\',\''+host.ipaddr+'\')"></i></span>\
   </td>';
-  var datasortdnsname = host.dnsnames.toString().trim();
+  var datasortdnsname = host.dnsnames.join(' ');
   if (datasortdnsname == ""){ datasortdnsname='zzzzzzzzzzzzzzzzzzzz'};
-  out+='<td data-sort-value="'+datasortdnsname+'">'+host.dnsnames.toString()+'</td>';
+  out+='<td data-sort-value="'+datasortdnsname+'">'+host.dnsnames.join(' ')+'</td>';
   var datasortnetbiosname = host.netbiosname.toString().trim();
   if (datasortnetbiosname == ""){ datasortnetbiosname='zzzzzzzzzzzzzzzzzzzz'};
   out+='<td data-sort-value="'+datasortnetbiosname+'">'+host.netbiosname.toString()+'</td>';
-  var datasorthostname = host.name.toString().trim();
+  var hostname = host.name ? host.name.toString().trim() : '';
+  var datasorthostname = hostname;
   if (datasorthostname == ""){ datasorthostname='zzzzzzzzzzzzzzzzzzzz'};
-  out+='<td data-sort-value="'+datasorthostname+'" textvalue="'+host.name+'"><div class="ui inverted transparent input"><input placeholder="Noname" type="text" onkeyup="changeName(this,event,\''+mac+'\',this.value)" value="'+host.name+'"></div></td>';
+  out+='<td data-sort-value="'+datasorthostname+'" textvalue="'+hostname+'"><div class="ui inverted transparent input"><input placeholder="Noname" type="text" onkeyup="changeName(this,event,\''+mac+'\',this.value)" value="'+hostname+'"></div></td>';
   var vendor = host.vendor ? host.vendor : '';
   if (vendor.toLowerCase == 'unknown') vendor='';
   var vendortext=''
@@ -355,7 +358,7 @@ function checkNmapStatus(callback){ // check nmap running state
       }
     }
     else {
-      document.getElementById("rescan_button").innerHTML='<i class="x icon"></i>Unavailable';
+      document.getElementById("rescan_button").innerHTML='<i class="x icon"></i>App is unavailable';
     }
   })
   .catch((error)=>{

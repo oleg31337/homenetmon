@@ -464,7 +464,7 @@ function portScan(ipaddr,type,options,callback){ //Function to perform port scan
         return;
       }
       //var data = convert.xml2js(stdout,{compact: true, spaces: 0});
-      mdnsScan((mdnshosts)=>{ //run mDNS scan before parsing to include it's results in name resolution
+      mdnsScan(20000,(mdnshosts)=>{ //run mDNS scan for 20 seconds before parsing to include it's results in name resolution
         parseString(stdout,{attrkey:'p',charkey:'t'}, (err, result)=>{ // convert from XML to JavaScript object
           if (err) {
             appLogger.error("Error parsing nmap results: "+err);
@@ -487,7 +487,6 @@ function portScan(ipaddr,type,options,callback){ //Function to perform port scan
           //console.log(parsedhosts);
         });
       });
-      
     });
     appLogger.debug('Nmap started with pid: '+nmapruntime.pid);
   }
@@ -595,22 +594,37 @@ function parseNmapOut(data){ // Function to parse json nmap output converted fro
   return parsedhosts;
 }
 
-function mdnsScan(callback){
-  var bonjour = require ('bonjour')({interface: localprimaryip, multicast: true, loopback: true, reuseAddr: true});
-  var browsertcp = bonjour.find({txt:{'binary': false},protocol:'tcp'});
-  var browserudp = bonjour.find({txt:{'binary': false},protocol:'udp'});
-  browsertcp.start();
-  browserudp.start();
+function mdnsScan(scantime,callback){
+  if (typeof(scantime)=='undefined') scantime=10000; //set to default 10 seconds scan (most optimal time)
+  var services=[];
+  var dnssd = require('dnssd2');
+  var browser = dnssd.Browser(dnssd.all(),{interface:localprimaryip,resolve:true})
+  .on('serviceUp', service => {
+    var servicebrowser=undefined;
+    if (service.protocol=='tcp') {
+      servicebrowser = dnssd.Browser(dnssd.tcp(service.name),{interface:localprimaryip,resolve:true})
+      .on('serviceUp', tcpservice => {
+        //console.log('tcp service');
+        services.push(tcpservice);
+      });
+    }
+    else {
+      servicebrowser = dnssd.Browser(dnssd.udp(service.name),{interface:localprimaryip,resolve:true})
+      .on('serviceUp', udpservice => {
+        //console.log('udp service');
+        services.push(udpservice);
+      });
+    }
+    servicebrowser.start();
+    setTimeout(()=>{servicebrowser.stop()},scantime); //stop the browser after 10 seconds
+  });
   appLogger.debug('Starting mDNS scan');
+  browser.start();
   setTimeout(function () {
     var hosts = {};
-    //console.log('tcp: ',browsertcp.services.length);
-    //console.log('udp: ',browserudp.services.length);
-    var services = browsertcp.services.concat(browserudp.services);
+    browser.stop();
     //console.log(JSON.stringify(services));
-    browsertcp.stop();
-    browserudp.stop();
-    bonjour.destroy();
+    //console.log(services.length);
     for (var i=0;i<services.length;i++){
       for (var j=0;j<services[i].addresses.length;j++){
         if (validateIP(services[i].addresses[j])){
@@ -620,10 +634,10 @@ function mdnsScan(callback){
         }
       }
     }
-    appLogger.debug('mDNS scan complete. found '+Object.keys(hosts).length+' hosts');
     //console.log(hosts);
+    appLogger.debug('mDNS scan complete. found '+Object.keys(hosts).length+' hosts');
     if (typeof(callback)=='function') callback(hosts);
-  },3000); // 3 seconds for scanning seem to be the optimal time for scanning entire subnet.
+  },scantime);
 }
 
 async function getLocalIP(callback){ // Function to get local IP addressese and corresponding MAC addresses and update global variables.

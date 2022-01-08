@@ -818,9 +818,7 @@ function appInit() { // main function that loads parameters and starts everythin
     var mtime = fs.statSync('./globalhosts.json').mtime; // get the modification time of the globalhosts file.
     try {
       globalhosts=JSON.parse(fs.readFileSync('./globalhosts.json'));
-      for (var h=0;h<Object.keys(globalhosts).length;h++){ // reset scanning state in case it was crashed or saved like that
-        globalhosts[Object.keys(globalhosts)[h]].scanning=false;
-      }
+      resetHostStatus(); //reset host scanning status
     }
     catch(err) {
       globalhosts={};//clear variable in case of parsing errors.

@@ -36,6 +36,7 @@ var globalarptable={}; // in-memory arp table
 var nmapCron=false; //global nmap cron object
 var nmapruntime; //global nmap exec object
 var firstrun = true; // global first run flag
+var isscanning = false; //global scanning flag
 
 app.set('trust proxy', 1); // support for the app behind reverse proxy, allows secure cookie.
 app.use(express.json());
@@ -184,7 +185,7 @@ app.get('/api/gethost', (req, res, next) => { // Get host info endpoint. Paramet
 
 app.get('/api/getnmaprun', (req, res, next) => { // Check nmap running endpoint. Output: msg_ok/err_busy
   //console.log(req);
-  if (!checkNmappid()){
+  if (!checkNmappid() && !isscanning){
     return res.status(200).type('application/json').send('{"msg":"ok"}').end;  
   }
   else {
@@ -408,6 +409,7 @@ function checkNmappid(){ // Function to check if nmap pid is still running
   try {
     var $pid=process.kill(nmapruntime.pid,0);
     //console.log('pid: '+$pid);
+    isscanning=true;
     return true
   }
   catch (e) {
@@ -431,6 +433,7 @@ function updateArp(ipaddr,macaddr) { // Function to update ARP table in app memo
 }
 
 function portScan(ipaddr,type,options,callback){ //Function to perform port scanning. Parameters: ip,type('portscan'|'discovery'). Callback parameters: ip, parsedhosts_obj, err
+  isscanning=true; //set scanning flag to true to prevent simultaneous start
   var scanscope='host'; // single host scope by default
   const { exec } = require("child_process");
   var nmapcmd=appOptions.NMAP_CMD_SCAN // full portscan by default
@@ -456,15 +459,18 @@ function portScan(ipaddr,type,options,callback){ //Function to perform port scan
       if (error) {
         appLogger.error('Error Nmap: '+error.message);
         if (typeof(callback)=='function') callback(ipaddr,false,error.message.toString());
+        isscanning=false;
         return;
       }
       if (stderr) {
         appLogger.error('Error Nmap: '+stderr);
         if (typeof(callback)=='function') callback(ipaddr,false,stderr.toString());
+        isscanning=false;
         return;
       }
       //var data = convert.xml2js(stdout,{compact: true, spaces: 0});
       mdnsScan(20000,(mdnshosts)=>{ //run mDNS scan for 20 seconds before parsing to include it's results in name resolution
+        isscanning=false;
         parseString(stdout,{attrkey:'p',charkey:'t'}, (err, result)=>{ // convert from XML to JavaScript object
           if (err) {
             appLogger.error("Error parsing nmap results: "+err);
@@ -490,7 +496,10 @@ function portScan(ipaddr,type,options,callback){ //Function to perform port scan
     });
     appLogger.debug('Nmap started with pid: '+nmapruntime.pid);
   }
-  else if (typeof(callback)=='function') callback(ipaddr,false);
+  else {
+    isscanning=false;
+    if (typeof(callback)=='function') callback(ipaddr,false,'Error IP address is not defined');
+  }
 }
 
 function parseNmapOut(data){ // Function to parse json nmap output converted from XML. Parameters: nmaprun_json_obj. Returns: parsedhosts_obj

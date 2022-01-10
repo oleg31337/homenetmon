@@ -15,7 +15,7 @@ function install-svc(){
   fi
   echo -n -e 'Please specify service account group name\nPress enter to use default: [homenetmon]:>'
   read servicegroup
-  if [ -z "$servicgroup" ];then
+  if [ -z "$servicegroup" ];then
     servicegroup=homenetmon
   fi
   groupadd $servicegroup >/dev/null 2>&1
@@ -43,7 +43,7 @@ function install-svc(){
   if [ "$folderowner" != "$serviceaccount" ];then
     echo -e '\033[1;31m--------------------Attention!!!--------------------\033[0m'
     echo Service user account $serviceaccount is not owning the application folder $SCRIPTPATH
-    echo Application will not be able to run properly.
+    echo Application may not be able to run properly.
     echo You can run chown command to fix this issue. 
     echo E.g: sudo chown -R $serviceaccount:$servicegroup $SCRIPTPATH
     echo

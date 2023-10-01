@@ -22,6 +22,15 @@ function int2ip(num) { // Convert IP dotted address to representing decimal numb
     return ip;
 }
 
+function findinArray(arr,strng){ // Function to find string in array and return array index or -1
+  for (var aidx=0;aidx<arr.length;aidx++ ){
+      if (arr[aidx]==strng){
+          return aidx;
+      }
+  }
+  return -1;
+}
+
 function secondsToHms(d) {
     d = Number(d);
     var h = Math.floor(d / 3600);
@@ -180,14 +189,14 @@ function checkStatus(){ // check if it was the first run of the app.
     .catch((error)=>{})
     .then(resp=>resp.json())
     .then(settings=>{
-      //console.log(settings);
-      if (typeof(settings.firstrun)!='undefined' && (settings.firstrun=='true' || settings.firstrun==true)) {
+      //console.log('Check status: ', settings);
+      if (typeof(settings.firstrun)!='undefined' && settings.firstrun==1) {
         //console.log ('first run');
-        setTimeout(function () { // delay 1 second before showing settings dialog
+        setTimeout(function () { // delay before showing settings dialog
           checkNmapStatus(function (state){
             if (!state) settingsDialog(); //open settings dialog if nmap is not already running.
           });
-        },1000);
+        },500);
       }
     }).catch((error)=>{responseDialog(undefined,['Error','Application is not available']);});
 }
@@ -208,12 +217,11 @@ async function generateTable(tabledata) { // create instances table contents
   }
   var out = '<table id="HostsTable" class="ui sortable inverted very compact selectable celled table">\
   <thead><tr>\
-  <th class="default-sort filtrable">IP Address</th>\
-  <th class="filtrable">DNS/mDNS hostname</th>\
-  <th class="filtrable">NetBIOS/mDNS name</th>\
-  <th class="filtrable">Custom name</th>\
-  <th class="filtrable">MAC Address</th>\
-  <th class="no-sort filtrable">Open ports</th>\
+  <th class="default-sort filtrable one wide">IP Address</th>\
+  <th class="filtrable one wide">Detected host names</th>\
+  <th class="filtrable two wide">Custom name</th>\
+  <th class="filtrable one wide">MAC Address</th>\
+  <th class="no-sort filtrable five wide">Detected open ports</th>\
   </tr>\
   </thead><tbody id="hoststablebody">';
   out += "</tbody></table>"
@@ -221,7 +229,9 @@ async function generateTable(tabledata) { // create instances table contents
   
   for(var i = 0; i < Object.keys(tabledata).length; i++) {
     var mac=Object.keys(tabledata)[i];
+    if (mac==null) continue;
     var host=tabledata[Object.keys(tabledata)[i]];
+    if (host==null) continue;
     await updateTableRow(host);
     //finally initiate automatic refresh
     let ipaddr=host.ipaddr;
@@ -243,6 +253,7 @@ async function generateTable(tabledata) { // create instances table contents
 async function updateTableRow(host,callback){
   //console.log("updateTableRow");
   //console.log(host);
+  if (host==null) return;
   mac=host.mac;
   tbody=document.getElementById("hoststablebody");
   if (!document.getElementById(host.ipaddr)){
@@ -254,42 +265,66 @@ async function updateTableRow(host,callback){
     tablerow=document.getElementById(host.ipaddr);
   }
   
-  var avail_color="red"; //default availability label color
-  if (host.latency>-1){
+  var latencytext = 'Latency: '+parseFloat(host.latency).toFixed(1);
+  if (host.latency < 0) latencytext='Unreachable';
+  
+  var avail_color="red"; //default availability label color for unreachable hosts
+  if (host.latency>=0){
+    avail_color="blue";
+  }
+  if (host.latency>=10){
     avail_color="green";
   }
-  else {
-    avail_color="red";
+  if (host.latency>=20){
+    avail_color="olive";
+  }
+  if (host.latency>=50){
+    avail_color="yellow";
+  }
+  if (host.latency>=100){
+    avail_color="orange";
   }
   var portslist=''; // generate list of ports
   var portslistfilter='';
-  if (host.ports!='nodata' && host.ports!='discovery' && host.ports.length>0){
+  //console.log(host);
+  if (Object.keys(host.ports.tcp).length > 0 || Object.keys(host.ports.udp).length > 0){
     var ports_tcp=[];
     var ports_udp=[];
     var ports_tcp_filter=[];
     var ports_udp_filter=[];
-    for (var j=0;j<host.ports.length;j++){
-      if (host.ports[j].protocol=='tcp') {
-        var proto='http';
-        if (host.ports[j].number == 21){
+    for (var i=0;i<Object.keys(host.ports.tcp).length;i++){
+      const port=parseInt(Object.keys(host.ports.tcp)[i]);
+      const service=host.ports.tcp[port].name;
+      const description=host.ports.tcp[port].desc;
+      var proto='none'; //protocol handlers
+        if (port == 21){
           proto='ftp';
         }
-        else if (host.ports[j].number == 22){
+        else if (port == 22){
           proto='ssh';
         }
-        else if (host.ports[j].number == 23){
+        else if (port == 23){
           proto='telnet';
         }
-        else if (host.ports[j].number == 443){
+        else if (findinArray([80,1880,8008,8009,8080,8081,8082,8083,8084,8085,8086,8087,8088,8089,10080,10088,30450],port)>=0){
+          proto='http';
+        }
+        else if (findinArray([443,8006,8443,8444,9443,10443],port)>=0){
           proto='https';
         }
-        ports_tcp.push('&nbsp;<span class="ui" data-tooltip="'+host.ports[j].service+'" data-variation="mini" data-inverted=""><a target="_blank" href="'+proto+'://'+host.ipaddr+':'+host.ports[j].number+'">'+host.ports[j].number+'</a></span>');
-        ports_tcp_filter.push(host.ports[j].service+host.ports[j].number+'tcp');
-      }
-      else {
-        ports_udp.push('&nbsp;<span class="ui" data-tooltip="'+host.ports[j].service+'" data-variation="mini" data-inverted="">'+host.ports[j].number+'</span>');
-        ports_udp_filter.push(host.ports[j].service+host.ports[j].number+'udp');
-      }
+        else if (findinArray([554,8554],port)>=0){
+          proto='rtsp';
+        }
+      if (proto !='none') ports_tcp.push('&nbsp;<span class="ui" data-tooltip="'+service+', '+description+'" data-variation="mini" data-inverted=""><a target="_blank" href="'+proto+'://'+host.ipaddr+':'+port+'">'+port+'</a></span>');
+      else ports_tcp.push('&nbsp;<span class="ui" data-tooltip="'+service+', '+description+'" data-variation="mini" data-inverted="">'+port+'</span>');
+      ports_tcp_filter.push(service+port+'tcp');
+    }
+    for (var i=0;i<Object.keys(host.ports.udp).length;i++){
+      const port=Object.keys(host.ports.udp)[i];
+      const service=host.ports.udp[port].name;
+      const description=host.ports.udp[port].desc;
+      ports_udp.push('&nbsp;<span class="ui" data-tooltip="'+service+', '+description+'" data-variation="mini" data-inverted="">'+port+'</span>');
+      ports_udp_filter.push(service+port+'udp');
     }
     if (ports_tcp.length>0){
       portslist+='TCP: '+ports_tcp.join(", ");
@@ -300,13 +335,10 @@ async function updateTableRow(host,callback){
       portslistfilter+=' '+ports_udp_filter.join(" ");
     }
   }
-  else if (host.ports=='discovery') {
-    portslist='<div class="ui inverted placeholder"><div class="paragraph">Scanning...</div></div>';
-  }
   else {
-    portslist='No open ports found. Try to rescan with more ports in scope or lower speed.';
+    portslist='No open ports found yet. Try more ports in scope or lower the speed.';
   }
-  if (host.scanning){
+  if (parseInt(host.scanning) == 1){
     //vail_color="gray";
     portslist='<div class="ui inline active inline loader"></div>&nbsp;&nbsp;&nbsp;Scanning is in progress';
   }
@@ -314,15 +346,19 @@ async function updateTableRow(host,callback){
   var out='<td data-sort-value="'+ip2int(host.ipaddr)+'" textvalue="'+host.ipaddr+'">'+host.ipaddr+'&nbsp;\
   &nbsp;<span class="ui" data-tooltip="Copy" data-variation="mini" data-inverted=""><i class="ui copy outline icon link" onclick="setClipboard(\''+host.ipaddr+'\',this)"></i></span>\
   </br><span class="ui" data-tooltip="Rescan" data-variation="mini" data-inverted=""><i class="ui sync alternate icon link" onclick="scanDialog(\''+mac+'\',\''+host.ipaddr+'\')"></i></span>\
-  &nbsp;<span class="ui" data-tooltip="Ping" data-variation="mini" data-inverted=""><i class="ui heartbeat alternate icon link '+avail_color+'" onclick="requestUpdate(\''+mac+'\',\''+host.ipaddr+'\')"></i></span>\
+  &nbsp;<span class="ui" data-tooltip="'+latencytext+'" data-variation="mini" data-inverted=""><i class="ui heartbeat alternate icon link '+avail_color+'" onclick="requestUpdate(\''+mac+'\',\''+host.ipaddr+'\')"></i></span>\
   &nbsp;<span class="ui" data-tooltip="Delete" data-variation="mini" data-inverted=""><i class="ui x icon link" onclick="confirmDelete(\''+mac+'\',\''+host.ipaddr+'\')"></i></span>\
   </td>';
-  var datasortdnsname = host.dnsnames.join(' ');
-  if (datasortdnsname == ""){ datasortdnsname='zzzzzzzzzzzzzzzzzzzz'};
-  out+='<td data-sort-value="'+datasortdnsname+'">'+host.dnsnames.join(' ')+'</td>';
-  var datasortnetbiosname = host.netbiosname.toString().trim();
-  if (datasortnetbiosname == ""){ datasortnetbiosname='zzzzzzzzzzzzzzzzzzzz'};
-  out+='<td data-sort-value="'+datasortnetbiosname+'">'+host.netbiosname.toString()+'</td>';
+
+  var detectednames=[];
+  if (typeof(host.netbiosname)!='undefined' && host.netbiosname !='') detectednames.push(host.netbiosname);
+  if (typeof(host.mdnsname)!='undefined' && host.mdnsname !='') detectednames.push(host.mdnsname);
+  if (typeof(host.mdnshostname)!='undefined' && host.mdnshostname !='') detectednames.push(host.mdnshostname);
+  detectednames=detectednames.concat(host.dnsnames);
+  var datasortnames = detectednames.join(' ');
+  if (datasortnames == ""){ datasortnames='zzzzzzzzzzzzzzzzzzzz'};
+  out+='<td data-sort-value="'+datasortnames+'">'+detectednames.join(', ')+'</td>';
+
   var hostname = host.name ? host.name.toString().trim() : '';
   var datasorthostname = hostname;
   if (datasorthostname == ""){ datasorthostname='zzzzzzzzzzzzzzzzzzzz'};
@@ -403,8 +439,8 @@ function requestUpdate(macaddr,ipaddr){
     delete globalsetinterval[macaddr];
   };
   document.getElementById(ipaddr).getElementsByClassName("ui heartbeat alternate icon link")[0].className="ui heartbeat alternate icon link gray";
-  ////console.log(mac,name);
-  fetch("api/gethost?mac="+macaddr)
+  //console.log(macaddr,ipaddr);
+  fetch("api/gethost?address="+macaddr)
   .catch((error)=>{})
   .then(resp=>resp.json()).then(data=>{
     updateTableRow(data);
@@ -442,7 +478,7 @@ function requestDelete(macaddr,ipaddr){
 function requestRescan(macaddr,ipaddr,options){
   //console.log('requestRescan');
   if (ipaddr !='subnet'){
-    document.getElementById(ipaddr).children[5].innerHTML='<div class="ui inline active inline loader"></div>&nbsp;&nbsp;&nbsp;Scanning is in progress'
+    document.getElementById(ipaddr).children[4].innerHTML='<div class="ui inline active inline loader"></div>&nbsp;&nbsp;&nbsp;Scanning is in progress'
     if (typeof (globalsetinterval[macaddr]) == 'number') {
       clearTimeout(globalsetinterval[macaddr]);
       delete globalsetinterval[macaddr];
@@ -451,7 +487,7 @@ function requestRescan(macaddr,ipaddr,options){
   document.getElementById("rescan_button").innerHTML='<div class="ui inline active inline loader"></div>&nbsp;&nbsp;&nbsp;Scanning is in progress';
   ////console.log(mac,name);
   
-  postData('api/nmapscan',{'ip':ipaddr,'options':options}).then (data => {
+  postData('api/netscan',{'ip':ipaddr,'options':options}).then (data => {
     ////console.log(data);
     if (typeof(data.msg) !='undefined'){
       ////console.log(data.msg)
@@ -462,24 +498,9 @@ function requestRescan(macaddr,ipaddr,options){
       if (ipaddr !='subnet') requestUpdate(macaddr,ipaddr);
       return;
     }
-  }).catch((error)=>{responseDialog(undefined,['Error','Application is not available']);});
+  }).catch((error)=>{responseDialog(undefined,['Error','Application is not available']);console.warn(error);});
   if (ipaddr !='subnet') globalsetinterval[macaddr]=setTimeout(function(){ requestUpdate((macaddr.toString()),(ipaddr.toString())); }, 1000);
 }
-
-/* function requestPing(ipaddr){
-  //console.log('requestPing');
-  if (typeof ipaddr =='undefined'){return;}
-  document.getElementById(ipaddr).getElementsByClassName("ui medium label")[0].className="ui medium label gray";
-  postData('api/ping',{'ip':ipaddr}).then (data => {
-    ////console.log(data);
-    if (data.msg == 'ok' && data.latency >= 0){
-      document.getElementById(ipaddr).getElementsByClassName("ui medium label")[0].className="ui medium label green";
-    }
-    else {
-      document.getElementById(ipaddr).getElementsByClassName("ui medium label")[0].className="ui medium label red";
-    }
-  });
-} */
 
 function confirmDialog(title,question,funct){ // confirmation dialog
     document.getElementById('modal_contents').setAttribute("class", "ui mini modal");
@@ -494,6 +515,7 @@ function confirmDialog(title,question,funct){ // confirmation dialog
     $('.ui.mini.modal').modal('setting', 'closable', true);
     $('.ui.mini.modal').modal('show');
 }
+
 function responseDialog(message,error){ // response and error dialog
   document.getElementById('modal_contents').setAttribute("class", "ui mini modal");
   document.getElementById('modal_contents').setAttribute("style", "");
@@ -593,12 +615,14 @@ function settingsDialog(){ // show settings dialog
                 <div class="field">\
                 <label style="color:#f2f2f2">Number of ports</label>\
                 <select class="ui fluid dropdown" id="select_ports" name="ports">\
-                  <option value="100">100 ports (fastest)</option>\
-                  <option value="1000">1000 ports (fast)</option>\
-                  <option value="1500">1500 ports (moderate)</option>\
-                  <option value="2000">2000 ports (slower)</option>\
-                  <option value="5000">5000 ports (slow)</option>\
-                  <option value="10000">10000 ports (very slow)</option>\
+                  <option value="10">top 10 ports (fastest)</option>\
+                  <option value="100">top 100 ports (fastest)</option>\
+                  <option value="1000">top 1000 ports (fast)</option>\
+                  <option value="1500">top 1500 ports (moderate)</option>\
+                  <option value="2000">top 2000 ports (slower)</option>\
+                  <option value="5000">top 5000 ports (slow)</option>\
+                  <option value="10000">top 10000 ports (very slow)</option>\
+                  <option value="65534">All popular ports (insanely slow)</option>\
                   <option value="65535">All 65535 ports (insanely slow)</option>\
                 </select>\
                 </div>\
@@ -611,7 +635,8 @@ function settingsDialog(){ // show settings dialog
               </div>\
               </div>\
             </div>';
-      if (typeof(settings.firstrun)!='undefined' && settings.firstrun) contents+='<input type="checkbox" hidden checked=true name="firstrun">';
+      console.log(settings.firstrun);
+      if (typeof(settings.firstrun)!='undefined' && settings.firstrun==1) contents+='<input type="checkbox" hidden checked=true name="firstrun">'
       contents+='</form>\
         </div>\
         <div class="ui actions"  style="background-color:#4d4d4d; color:#f2f2f2">\
@@ -638,20 +663,20 @@ function activateSettingsForm() {
     inline: true,
     fields: {
       cronexpr:{
-      identifier: 'cronexpr',
-      rules: [{
-        type: 'regExp',
-        value: /^((((\d+,)+\d+|(\d+(\/|-)\d+)|\d+|\*) ?){5})$/,
-        prompt: 'Please enter a valid cron expression'
-      }]
+        identifier: 'cronexpr',
+        rules: [{
+          type: 'regExp',
+          value: /^((((\d+,)+\d+|(\d+(\/|-)\d+)|\d+|\*) ?){5})$/,
+          prompt: 'Please enter a valid cron expression'
+        }]
       },
       netmask:{
-      identifier: 'netmask',
-      rules: [{
-        type: 'regExp',
-        value: /(^([8-9]|0[8-9]|[1-2][0-9]|3[0-2])$)|(^(((255\.){3}(255|254|252|248|240|224|192|128|0+))|((255\.){2}(255|254|252|248|240|224|192|128|0+)\.0)|((255\.)(255|254|252|248|240|224|192|128|0+)(\.0+){2})|((255|254|252|248|240|224|192|128|0+)(\.0+){3}))$)/,
-        prompt: 'Please enter a valid netmask'
-      }]
+        identifier: 'netmask',
+        rules: [{
+          type: 'regExp',
+          value: /(^([8-9]|0[8-9]|[1-2][0-9]|3[0-2])$)|(^(((255\.){3}(255|254|252|248|240|224|192|128|0+))|((255\.){2}(255|254|252|248|240|224|192|128|0+)\.0)|((255\.)(255|254|252|248|240|224|192|128|0+)(\.0+){2})|((255|254|252|248|240|224|192|128|0+)(\.0+){3}))$)/,
+          prompt: 'Please enter a valid netmask'
+        }]
       }
     }
     });
@@ -722,27 +747,24 @@ function saveHostsCSV(){
     download(convertHostsCSV(data),'hosts_'+ new Date().toLocaleDateString() +'.csv','text/csv');
   }).catch((error)=>{responseDialog(undefined,['Error','Application is not available']);});
 }
-function convertHostsCSV(data){
-  var csv='"IP Address","Status","DNS Name","NetBIOS Name","Name","MAC Address","Vendor","Ports TCP","Ports UDP"\r\n'
-  for(var i = 0; i < Object.keys(data).length; i++) {
-    var host=data[Object.keys(data)[i]];
+function convertHostsCSV(hosts){
+  var csv='"IP Address","Latency","DNS Names","Detected Names","Custom name","MAC Address","Vendor","Ports TCP","Ports UDP"\r\n'
+  for(var i = 0; i < Object.keys(hosts).length; i++) {
+    const host=hosts[Object.keys(hosts)[i]];
     var ports_tcp=[];
     var ports_udp=[];
-    var state="Offline";
-    if (host.latency>-1){
-      state="Online";
+    for (var j=0;j<Object.keys(host.ports.tcp).length;j++){
+      const port=Object.keys(host.ports.tcp)[j];
+      ports_tcp.push(port);
     }
-    if (host.ports!='nodata' && host.ports!='discovery'){
-      for (var j=0;j<host.ports.length;j++){
-        if (host.ports[j].protocol=='tcp') {
-          ports_tcp.push(host.ports[j].number);
-        }
-        else {
-          ports_udp.push(host.ports[j].number);
-        }
-      }
+    for (var j=0;j<Object.keys(host.ports.udp).length;j++){
+      const port=Object.keys(host.ports.udp)[j];
+      ports_udp.push(port);
     }
-    csv+='"'+[host.ipaddr,state,host.dnsnames.join(','),host.netbiosname,host.name,host.mac,host.vendor,ports_tcp.join(','),ports_udp.join(',')].join('","')+'"\r\n';
+    //console.log(ports_tcp);
+    var alldnsnames=host.dnsnames.push(host.mdnshostname);
+    var detectednames=[host.netbiosname,host.mdnsname];
+    csv+='"'+[host.ipaddr,host.latency,alldnsnames.join(','),detectednames.join(','),host.name,host.mac,host.vendor,ports_tcp.join(','),ports_udp.join(',')].join('","')+'"\r\n';
   }
   return csv;
 }
@@ -774,12 +796,14 @@ function scanDialog(macaddr,ipaddr){ // show scan settings dialog
             <label style="color:#f2f2f2">Number of ports</label>\
             <select class="ui fluid dropdown" id="select_ports" name="ports">'
   if (ipaddr=='subnet') contents+='<option value="0">Quick network swipe without port scan</option>'
-  contents+='<option value="100">100 ports (fastest)</option>\
-              <option value="1000">1000 ports (fast)</option>\
-              <option value="1500">1500 ports (moderate)</option>\
-              <option value="2000">2000 ports (slower)</option>\
-              <option value="5000">5000 ports (slow)</option>\
-              <option value="10000">10000 ports (very slow)</option>\
+  contents+=' <option value="10">top 10 ports (fastest)</option>\
+              <option value="100">top 100 ports (fastest)</option>\
+              <option value="1000">top 1000 ports (fast)</option>\
+              <option value="1500">top 1500 ports (moderate)</option>\
+              <option value="2000">top 2000 ports (slower)</option>\
+              <option value="5000">top 5000 ports (slow)</option>\
+              <option value="10000">top 10000 ports (very slow)</option>\
+              <option value="65534">All popular ports (insanely slow)</option>\
               <option value="65535">All 65535 ports (insanely slow)</option>\
             </select>\
             </div>\
@@ -812,6 +836,7 @@ function submitScanForm() {
     setCookie('scanports',ports,31557600000);
     setCookie('scanspeed',speed,31557600000);
   }
+  //console.log(macaddr,ipaddr,{'speed':speed,'ports':ports});
   requestRescan(macaddr,ipaddr,{'speed':speed,'ports':ports});
 }
 

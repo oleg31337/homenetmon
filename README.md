@@ -44,8 +44,12 @@ Available options are:
  * NMAP_CRON: This is the CRON expression for scheduled full network scans. https://en.wikipedia.org/wiki/Cron
    by default it will run at 3:30 AM every day - "30 03 * * *"
  * NMAP_CRON_ENABLE: This is the true/false parameter whether to schedule regular full network scans
+ * REDIS_URL: URL to access Redis database. Now it is a hard requirement for the application.
+ * KEEP_STATS_HISTORY: Keep n days of scan stats history
+ * FIRST_RUN: First run indicator, will show settings menu in browser on the first start. For internal app use. Leave at 0.
 
 **Note:** Subnet address, Nmap parameters and Cron expression can be set from the application web page.
+**Note:** For the CRON expression, months are counted from 0 to 11 (weird bug in cron for node.js).
 
 ## Running the application in the command prompt
 1. To run the app in the command prompt:
@@ -58,9 +62,7 @@ where 30450 is the port set in the appOptions.json configuration file
 `npm run debug`
 
 ## Application data
-Application stores the hosts and status information in the plain text files in JSON format.
-Files are called: `globalhosts.json` and `globallastscan.json`.
-If application is restarted, it will try to read those files into memory and if files are not found it will run the full network scan.
+Application stores the hosts and status information in the Redis database. Make sure to use redis regular dumps so you won't loose data on restart.
 
 ## Application logs
 By default all logs are printed to stdout. When app is running as a systemd service, the log is recorded by systemd journal.

@@ -1,29 +1,30 @@
 {
   "name": "homenetmon",
   "description": "Home network monitor",
-  "version": "1.0.0",
-  "main": "app.js",
-  "bin": "app.js",
+  "version": "2.0.0",
+  "main": "app.mjs",
+  "bin": "app.mjs",
   "scripts": {
-    "start": "npm ci; node app.js",
+    "start": "npm ci; node app.mjs",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "debug": "export DEBUG=true; npm ci; node app.js",
-    "devel": "export DEBUG=true; nodemon --ignore '*.json' --ignore sessions app.js"
+    "debug": "export DEBUG=true; npm ci; node app.mjs",
+    "devel": "export DEBUG=true; nodemon --ignore '*.json' --ignore sessions --ignore public app.mjs"
   },
-  "license": "GPL-3.0-or-later",
+  "license": "MIT",
   "dependencies": {
-    "cron": "^1.8.2",
+    "connect-redis": "^7.1.0",
+    "cron": "^2.4.0",
+    "csv-parser": "^3.0.0",
     "default-gateway": "^6.0.3",
     "dnssd2": "^1.0.0",
-    "express": "^4.17.1",
-    "express-session": "^1.17.2",
-    "fs": "0.0.1-security",
+    "express": "^4.18.2",
+    "express-session": "^1.17.3",
+    "fs": "^0.0.1-security",
     "http": "0.0.1-security",
-    "ip": "^1.1.5",
-    "open": "^8.4.0",
-    "ping": "^0.4.1",
-    "session-file-store": "^1.5.0",
-    "xml2js": "^0.4.23"
+    "ip": "^1.1.8",
+    "ping": "^0.4.4",
+    "redis": "^4.6.10",
+    "xml2js": "^0.6.2"
   },
   "repository": {
     "type": "git",

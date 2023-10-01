@@ -8,6 +8,7 @@ nodepath=$(type -p node)
 npmpath=$(type -p npm)
 nmappath=$(type -p nmap)
 npingpath=$(type -p nping)
+teepath=$(type -p tee)
 
 error=0
 if [ -z "$nodepath" ];then
@@ -54,5 +55,5 @@ fi
 
 cd $scriptpath
 $npmpath ci
-$nodepath app.js
+$nodepath app.mjs | $teepath -a $scriptpath/homenetmon.log
 

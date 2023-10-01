@@ -1,0 +1,9 @@
+app-options.json
+import-ports-database.js
+*.csv
+*.log
+node_modules/
+*test*.js
+*test*.mjs
+*.template
+*.conf

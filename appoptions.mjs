@@ -15,12 +15,12 @@ class appOptions {
         SUBNET: '192.168.1.0/24',
         NMAP_SPEED: 5, // maximum speed by default
         NMAP_PORTS: 1000, // scan only 1000 popular ports by default
-        NMAP_CMD_SCAN: "/usr/bin/nmap --privileged -oX - -sU -sS --max-retries 5 --script nbstat --system-dns",
-        NMAP_CMD_SWEEP: "/usr/bin/nmap --privileged -oX - -sS -sU --top-ports 10 -T5 --script nbstat --max-retries 2 --system-dns",
+        NMAP_CMD_SCAN:  "/usr/bin/nmap --privileged -oX - -sS -sU --max-retries 5 --script nbstat --system-dns",
+        NMAP_CMD_SWEEP: "/usr/bin/nmap --privileged -oX - -sS -sU --max-retries 2 --script nbstat --system-dns --top-ports 10 -T5",
         NPING_CMD: "/usr/bin/nping --privileged --arp -c10 --rate=100",
         NMAP_CRON: "30 03 * * *",// default full scan schedule at 3:30am
         NMAP_CRON_ENABLE: 0, //disable scheduled scanning by default
-        REDIS_URL: "redis://localhost:6379",
+        REDIS_URL: "redis://localhost:30451", // non-standard redis port, this is for docker container to run on host network
         KEEP_STATS_HISTORY: 30, //keep 30 days of scan stats history by default
         FIRST_RUN: 1 //first run indicator, will show settings menu in browser on the first start
     };

@@ -1,8 +1,9 @@
 version: '3'
 services:
   homenetmon:
+    container_name: homenetmon
     build: .
-    privileged: true
+    restart: unless-stopped
     volumes:
       - homenetmon-data:/data
     network_mode: host

@@ -11,12 +11,10 @@ RUN alien --to-deb nmap-7.94-1.x86_64.rpm
 RUN alien --to-deb nping-0.7.94-1.x86_64.rpm
 RUN dpkg -i *.deb
 RUN rm -f *.rpm *.deb
-RUN apt-get -y purge wget alien
-RUN apt-get -y autoremove
-RUN apt-get -y autoclean
+RUN apt-get -y purge wget alien && apt-get -y autoremove && apt-get -y autoclean
 RUN nmap --script-updatedb
 RUN mkdir /data
 RUN npm install
 ENV DATA_PATH /data
-ENV DEBUG true
+#ENV DEBUG true #not needed for production
 ENTRYPOINT ["/app/homenetmon-docker.sh"]

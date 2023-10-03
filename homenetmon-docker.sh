@@ -22,7 +22,7 @@ cd /app
 /usr/bin/nmap --script-updatedb
 
 #start Redis DB
-/usr/bin/redis-server --bind 127.0.0.1 --port 30451 --daemonize no --save 60 1 --dbfilename redis.rdb --dir $DATA_PATH &
+/usr/bin/redis-server --bind 127.0.0.1 --loglevel warning --port 30451 --daemonize no --save 60 1 --dbfilename redis.rdb --dir $DATA_PATH &
 redis_server_pid=$!
 
 #start app

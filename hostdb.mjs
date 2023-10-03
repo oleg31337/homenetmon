@@ -25,7 +25,7 @@ class hostDB {
         }
         catch (error) {
             logger.error('HostDB: Could not establish a connection with redis.', error);
-            return error;
+            process.exit(0);
         }
     }
     

@@ -1,5 +1,3 @@
-import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import http from 'http';
 import redis from 'redis';
@@ -8,13 +6,13 @@ import express from 'express';
 import session from 'express-session';
 import cron from 'cron';
 import { fileURLToPath } from 'url';
-//import { dirname } from 'path';
 
 import appLogger from './applogger.mjs'; //logging class
 import appOptions from './appoptions.mjs'; //options class
 import hostDB from './hostdb.mjs'; //host data mgmt class
 import appUtils from './apputils.mjs'; //utility functions
 import netScanner from './netscanner.mjs' //network scanning functions
+import { setTimeout } from 'timers/promises';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -34,10 +32,11 @@ const redisStore = new connectRedis({
   prefix: 'session:',
 });
 redisClient.on('error', function (err) {
-  logger.log('Session store: Could not establish a connection with redis. ' + err.toString());
+  logger.log('Session store: Could not establish a connection with Redis. ' + err.toString());
+  process.exit(1);
 });
 redisClient.on('connect', function () {
-  logger.log('Session store: Connected to redis successfully');
+  logger.log('Session store: Connected to Redis successfully');
 });
 
 const app = express(); // initialize Express app
@@ -46,8 +45,8 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(
   session({
-    // initialize Express session using file store
-    store: redisStore, // new fileStore(fileStoreOptions),
+    // initialize Express session using Redis store
+    store: redisStore,
     secret: options.get('APP_SESSION_SECRET') || 'not-very-secure-session',
     resave: false,
     saveUninitialized: true,
@@ -70,6 +69,11 @@ app.post('/api/ping', (req, res, next) => {// Ping host endpoint. Parameters: bo
   if (typeof(req.body.ip) != undefined && utils.validateIPaddress(req.body.ip)){
     netscan.pingHost(req.body.ip).then((latency)=>{
       logger.debug('API/ping: address '+req.body.ip+' latency '+latency);
+      if (latency>=0){
+        hostdb.getmac(req.body.ip).then((mac)=>{
+          hostdb.set(mac,'lastseen',new Date().getTime()); //set the last seen date of the host
+        });
+      }
       return res.status(200).type('application/json').send('{"msg":"ok","latency":'+latency+'}').end;
     });
   }
@@ -108,6 +112,7 @@ app.get('/api/gethost', (req, res) => { // Get host info endpoint. Parameters: u
       netscan.pingHost(host.ipaddr).then((latency)=>{
         host.latency=latency;
         hostdb.set(host.mac,'latency',latency); //set the latency in the DB
+        if (latency >= 0) hostdb.set(host.mac,'lastseen',new Date().getTime()); //set last seen date if host is online
         return res.status(200).type('application/json').send(JSON.stringify(host)).end;
       });
     });    
@@ -294,7 +299,7 @@ function scheduledScan(){ // Function to perform full subnet network scan
 }
 
 async function appInit() { // main function that loads parameters and starts everything else
-  logger.log('Starting homenetmon application on '+process.platform);  
+  logger.log('Starting homenetmon application on '+process.platform);
   if (options.get('NMAP_CRON_ENABLE')==1) {
     nmapCron.start();
     logger.log('Scheduling next automatic full network scan on '+nmapCron.nextDates().toString());
@@ -314,6 +319,7 @@ async function appInit() { // main function that loads parameters and starts eve
 
 function appShutdown() { //function to gracefully shutdown the app
   logger.log('Caught kill signal, terminating the app');
+  setTimeout(5000,()=>{process.exit(0);}); //give the app time to terminate, then kill.
   hostdb.syncDB().then((error) =>{
     hostdb.close().then((err)=>{
       process.exit(0);

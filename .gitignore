@@ -104,6 +104,7 @@ dist
 # TernJS port file
 .tern-port
 
+dist/
 node_modules/
 globalhosts.json
 globalhosts.bak.json
@@ -111,3 +112,5 @@ globallastscan.json
 app-options.json
 homenetmon.service
 /app-options.json
+*test*.js
+*test*.mjs

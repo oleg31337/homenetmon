@@ -16,7 +16,7 @@ class hostDB {
         this.connect();
     }
 
-    async connect(redisurl){
+    async connect(){
         try{
             this.#redisClient = redis.createClient({ url: options.get('REDIS_URL') || 'redis://localhost:6379' });
             await this.#redisClient.connect();
@@ -40,7 +40,18 @@ class hostDB {
             return error;
         }
     }
-    
+    async healthCheck() {
+        try {
+            const result = await this.#redisClient.ping();
+            if (result !== 'PONG') {
+                throw new Error('Redis health check failed');
+            }
+            return true;
+        } catch (error) {
+            logger.error('hostDB:healthCheck:', error);
+            return false;
+        }
+    }    
     async getHost(addr) {
         try {
             let mac=addr;

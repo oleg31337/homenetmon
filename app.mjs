@@ -96,6 +96,13 @@ app.get('/api/gethosts', (req, res) => {// Get hosts endpoint for all hosts. No 
   }
 });
 
+app.get('/api/healthcheck', (req, res) => {
+  hostdb.healthCheck().then((status)=>{
+    if (status) return res.status(200).type('application/json').send('{"msg":"ok"}').end;
+    else return res.status(500).type('application/json').send('{"err":"database unavailable"}').end;
+  });
+});
+
 app.get('/api/gethost', (req, res) => { // Get host info endpoint. Parameters: url query: address (ip or mac)
   try {
     var addr=req.query.address;

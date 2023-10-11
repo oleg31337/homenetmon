@@ -111,19 +111,19 @@ class netScanner{
 
     async #nmapRun(nmapcmd){
         return new Promise((resolve, reject) => {
-            this.#nmapruntime = exec(nmapcmd, {maxBuffer: 10485760, timeout: 86400000}, (error, stdout, stderr) => {
+            this.#nmapruntime = exec(nmapcmd, {maxBuffer: 20971520, timeout: 86400000}, (error, stdout, stderr) => {
                 if (error) {
-                    logger.error('nmapRun: nmap exec error:'+error.message);
-                    if (typeof(callback)=='function') callback(ipaddr,false,error.message.toString());
+                    logger.error('nmapRun: nmap execution error: '+error.message);
                     reject (error);
                 }
                 if (stderr) {
-                    logger.error('nmapRun: nmap stderr:'+stderr);
+                    logger.error('nmapRun: nmap execution error: '+stderr);
                     reject (stderr);
                 }
                 parseString(stdout,{attrkey:'p',charkey:'t'}, (err, result)=>{
                     if (err) {
-                        logger.error("nmapRun: Error Parsing nmap results: "+err);
+                        logger.error("nmapRun: Error converting nmap results to JSON: "+err);
+                        logger.debug('nmap XML output content:\n', stdout);
                         reject(err);
                     }
                     logger.debug('nmapRun: nmap scan finished.');
@@ -174,6 +174,9 @@ class netScanner{
                     this.lastscan=JSON.parse(JSON.stringify(parsedhosts.stats)); //deep copy value
                     logger.log(`portScan: scanning of ${ipaddr} is complete`);
                     resolve(parsedhosts);
+                }).catch(err => {
+                    logger.error(`portScan: Error during scanning ${ipaddr}`, err);
+                    reject(err);
                 });
             }
             else {
@@ -236,136 +239,147 @@ class netScanner{
                     .on('serviceUp', (tcpservice) => {
                         services.push(tcpservice);
                     });
-                } else {
+                } else if (service.protocol === 'udp'){
                 servicebrowser = dnssd.Browser(dnssd.udp(service.name), { interface: this.localprimaryip, resolve: true })
                     .on('serviceUp', (udpservice) => {
                         services.push(udpservice);
                     });
                 }
+                else return;
                 servicebrowser.start();
                 setTimeout(() => { servicebrowser.stop(); }, scantime);
+            })
+            .on('error', (err) => {
+                logger.error(`mdnsScan: Error during mDNS scan: ${err}`);
+                reject(err);
             });
             logger.debug('Starting mDNS scan');
             browser.start();
             setTimeout(() => {
-            const hosts = {};
-            browser.stop();
-            //console.log(JSON.stringify(services));
-            const regex_square = /\s*\[.*?\]\s*/g;
-            const regex_dot = /\.$/;
-            const regex_colon = /:.*/g;
-            for (let i = 0; i < services.length; i++) {
-                for (let j = 0; j < services[i].addresses.length; j++) {
-                    if (utils.validateIP(services[i].addresses[j])) {
-                        if (typeof hosts[services[i].addresses[j]] === 'undefined') {
-                            hosts[services[i].addresses[j]] = {};
+                const hosts = {};
+                browser.stop();
+                //console.log(JSON.stringify(services));
+                const regex_square = /\s*\[.*?\]\s*/g;
+                const regex_dot = /\.$/;
+                const regex_colon = /:.*/g;
+                for (let i = 0; i < services.length; i++) {
+                    for (let j = 0; j < services[i].addresses.length; j++) {
+                        if (utils.validateIP(services[i].addresses[j])) {
+                            if (typeof hosts[services[i].addresses[j]] === 'undefined') {
+                                hosts[services[i].addresses[j]] = {};
+                            }
+                            if (typeof (services[i].name)!='undefined') hosts[services[i].addresses[j]].name = services[i].name.replace(regex_square,'').replace(regex_colon,'').trim();
+                            else hosts[services[i].addresses[j]].name='';
+                            if (typeof (services[i].name)!='undefined') hosts[services[i].addresses[j]].host = services[i].host.replace(regex_dot,'').trim();
+                            else hosts[services[i].addresses[j]].host='';
                         }
-                        if (typeof (services[i].name)!='undefined') hosts[services[i].addresses[j]].name = services[i].name.replace(regex_square,'').replace(regex_colon,'').trim();
-                        else hosts[services[i].addresses[j]].name='';
-                        if (typeof (services[i].name)!='undefined') hosts[services[i].addresses[j]].host = services[i].host.replace(regex_dot,'').trim();
-                        else hosts[services[i].addresses[j]].host='';
                     }
                 }
-            }
-            logger.debug(`mDNS scan complete. found ${Object.keys(hosts).length} hosts`);
-            //console.log(JSON.stringify(hosts,null,2));
-            resolve (hosts);
+                logger.debug(`mDNS scan complete. found ${Object.keys(hosts).length} hosts`);
+                //console.log(JSON.stringify(hosts,null,2));
+                resolve (hosts);
             }, scantime);
         });
     };
 
     #parseScanResults(data){ // internal Function to parse json nmap output converted from XML. Parameters: nmaprun_json_obj. Returns: parsedhosts_obj
-        var parsedhosts={hosts:{},stats:{}};
-        var portsprobed={tcp:[],udp:[]};
-        if (typeof (data.nmaprun.host) !='undefined'){
-          var hosts=data.nmaprun.host;
-          for (var i=0;i<hosts.length;i++){
-            var ip = hosts[i].address[0].p.addr;
-            var mac = hosts[i].address[1] ? hosts[i].address[1].p.addr : 'unknown';
-            if (mac=='unknown'){ //let's try to check if it is one of our local interfaces
-              if (utils.findinArray(this.localip,ip)>=0){
-                mac=this.localmac[utils.findinArray(this.localip,ip)];
-              }
-            }
-            if (mac=='unknown'){ // if mac is still unknown, skip this host
-              continue;
-            }
-            var dnsnames = [];
-            if (typeof(hosts[i].hostnames[0].hostname) != 'undefined') {
-              for (var nn=0;nn<hosts[i].hostnames[0].hostname.length;nn++){
-                if (hosts[i].hostnames[0].hostname[nn].p.name.toString().trim().length >= 3){ // only use hostname if it is more than 3 in length.
-                  dnsnames.push(hosts[i].hostnames[0].hostname[nn].p.name.toString().trim());
+        try{
+            var parsedhosts={hosts:{},stats:{}};
+            var portsprobed={tcp:[],udp:[]};
+            if (typeof (data.nmaprun.host) !='undefined'){
+            var hosts=data.nmaprun.host;
+            for (var i=0;i<hosts.length;i++){
+                var ip = hosts[i].address[0].p.addr;
+                var mac = hosts[i].address[1] ? hosts[i].address[1].p.addr : 'unknown';
+                if (mac=='unknown'){ //let's try to check if it is one of our local interfaces
+                if (utils.findinArray(this.localip,ip)>=0){
+                    mac=this.localmac[utils.findinArray(this.localip,ip)];
                 }
-              }
-            } else dnsnames=[];
-            //if (typeof(data.mdnshosts[ip])!='undefined') {
-            //    dnsnames.push(data.mdnshosts[ip].host);
-            //}
-            var netbiosname='';
-            if (typeof(hosts[i].hostscript) != 'undefined'){
-                //logger.debug(JSON.stringify(hosts[i].hostscript[0].script[0].p.output));
-                const re=/^NetBIOS\sname:\s(\S+),\sNetBIOS.*/i;
-                netbiosname=(hosts[i].hostscript[0].script[0].p.output).toString().match(re) ? (hosts[i].hostscript[0].script[0].p.output).toString().match(re)[1] : '';
-                //logger.debug(JSON.stringify(netbiosname));
-                var elem = hosts[i].hostscript[0].script[0].elem ? hosts[i].hostscript[0].script[0].elem : []; //alternative results may be generated by nmap (WTF???)
-                for (var n=0;n<elem.length;n++){
-                    if (elem[n].p.key=='server_name') netbiosname=elem[n].t;
                 }
-            }
-            if (typeof(netbiosname)=='undefined' || netbiosname=='<unknown>') netbiosname='';
-            var mdnsname='';
-            var mdnshostname='';
-            if (typeof(data.mdnshosts[ip])!='undefined' && data.mdnshosts[ip].name !='') {
-                mdnsname=data.mdnshosts[ip].name;
-                mdnshostname=data.mdnshosts[ip].host;
-            }
+                if (mac=='unknown'){ // if mac is still unknown, skip this host
+                continue;
+                }
+                var dnsnames = [];
+                if (typeof(hosts[i].hostnames[0].hostname) != 'undefined') {
+                for (var nn=0;nn<hosts[i].hostnames[0].hostname.length;nn++){
+                    if (hosts[i].hostnames[0].hostname[nn].p.name.toString().trim().length >= 3){ // only use hostname if it is more than 3 in length.
+                    dnsnames.push(hosts[i].hostnames[0].hostname[nn].p.name.toString().trim());
+                    }
+                }
+                } else dnsnames=[];
+                //if (typeof(data.mdnshosts[ip])!='undefined') {
+                //    dnsnames.push(data.mdnshosts[ip].host);
+                //}
+                var netbiosname='';
+                if (typeof(hosts[i].hostscript) != 'undefined'){
+                    //logger.debug(JSON.stringify(hosts[i].hostscript[0].script[0].p.output));
+                    const re=/^NetBIOS\sname:\s(\S+),\sNetBIOS.*/i;
+                    netbiosname=(hosts[i].hostscript[0].script[0].p.output).toString().match(re) ? (hosts[i].hostscript[0].script[0].p.output).toString().match(re)[1] : '';
+                    //logger.debug(JSON.stringify(netbiosname));
+                    var elem = hosts[i].hostscript[0].script[0].elem ? hosts[i].hostscript[0].script[0].elem : []; //alternative results may be generated by nmap (WTF???)
+                    for (var n=0;n<elem.length;n++){
+                        if (elem[n].p.key=='server_name') netbiosname=elem[n].t;
+                    }
+                }
+                if (typeof(netbiosname)=='undefined' || netbiosname=='<unknown>') netbiosname='';
+                var mdnsname='';
+                var mdnshostname='';
+                if (typeof(data.mdnshosts[ip])!='undefined' && data.mdnshosts[ip].name !='') {
+                    mdnsname=data.mdnshosts[ip].name;
+                    mdnshostname=data.mdnshosts[ip].host;
+                }
 
-            var vendor = hosts[i].address[1] ? hosts[i].address[1].p.vendor : 'unknown';
-            var ports={tcp:{},udp:{}};
-            portsprobed={tcp:[],udp:[]};
-            if (typeof(hosts[i].ports) != 'undefined' && typeof(hosts[i].ports[0].port) !='undefined'){
-                //console.log("-----------------------------\n",JSON.stringify(hosts[i].ports,null,2),"-----------------------------\n")
-                for (var j=0;j<hosts[i].ports[0].port.length;j++){
-                    var portid=hosts[i].ports[0].port[j].p.portid;
-                    var protocol=hosts[i].ports[0].port[j].p.protocol;
-                    //var service=hosts[i].ports[0].port[j].service[0].p.name ? hosts[i].ports[0].port[j].service[0].p.name : 'unknown';
-                    var service = {name:'',desc:''};
-                    if (typeof(this.#servicesDB[protocol][portid]) !='undefined'){
-                        service=this.#servicesDB[protocol][portid]
+                var vendor = hosts[i].address[1] ? hosts[i].address[1].p.vendor : 'unknown';
+                var ports={tcp:{},udp:{}};
+                portsprobed={tcp:[],udp:[]};
+                if (typeof(hosts[i].ports) != 'undefined' && typeof(hosts[i].ports[0].port) !='undefined'){
+                    //console.log("-----------------------------\n",JSON.stringify(hosts[i].ports,null,2),"-----------------------------\n")
+                    for (var j=0;j<hosts[i].ports[0].port.length;j++){
+                        var portid=hosts[i].ports[0].port[j].p.portid;
+                        var protocol=hosts[i].ports[0].port[j].p.protocol;
+                        //var service=hosts[i].ports[0].port[j].service[0].p.name ? hosts[i].ports[0].port[j].service[0].p.name : 'unknown';
+                        var service = {name:'',desc:''};
+                        if (typeof(this.#servicesDB[protocol][portid]) !='undefined'){
+                            service=this.#servicesDB[protocol][portid]
+                        }
+                        var state=hosts[i].ports[0].port[j].state[0].p.state;
+                        portsprobed[protocol].push(parseInt(portid));
+                        if (state == 'open'){ //only push if port state is open
+                            ports[protocol][portid]=service;
+                        }
                     }
-                    var state=hosts[i].ports[0].port[j].state[0].p.state;
-                    portsprobed[protocol].push(parseInt(portid));
-                    if (state == 'open'){ //only push if port state is open
-                        ports[protocol][portid]=service;
-                    }
+                    //if (ports.length==0) ports=[];
                 }
-                //if (ports.length==0) ports=[];
+                else ports={tcp:{},udp:{}};
+                //update hosts information
+                if (typeof(parsedhosts.hosts[mac])=='undefined'){  //if new host then define an object and add first seen date.
+                parsedhosts.hosts[mac]={}; 
+                }
+                parsedhosts.hosts[mac].lastseen=new Date().getTime(); //set last seen date to now
+                parsedhosts.hosts[mac].lastscanned=new Date().getTime(); //set last scanned date to now
+                parsedhosts.hosts[mac].ipaddr=ip;
+                parsedhosts.hosts[mac].mac=mac;
+                parsedhosts.hosts[mac].dnsnames=dnsnames;
+                parsedhosts.hosts[mac].netbiosname=netbiosname;
+                parsedhosts.hosts[mac].mdnsname=mdnsname;
+                parsedhosts.hosts[mac].mdnshostname=mdnshostname;
+                parsedhosts.hosts[mac].ports=ports;
+                parsedhosts.hosts[mac].vendor=vendor;
+                parsedhosts.hosts[mac].scanning=0; //means the scanning is complete
             }
-            else ports={tcp:{},udp:{}};
-            //update hosts information
-            if (typeof(parsedhosts.hosts[mac])=='undefined'){  //if new host then define an object and add first seen date.
-              parsedhosts.hosts[mac]={}; 
             }
-            parsedhosts.hosts[mac].lastseen=new Date().getTime(); //set last seen date to now
-            parsedhosts.hosts[mac].lastscanned=new Date().getTime(); //set last scanned date to now
-            parsedhosts.hosts[mac].ipaddr=ip;
-            parsedhosts.hosts[mac].mac=mac;
-            parsedhosts.hosts[mac].dnsnames=dnsnames;
-            parsedhosts.hosts[mac].netbiosname=netbiosname;
-            parsedhosts.hosts[mac].mdnsname=mdnsname;
-            parsedhosts.hosts[mac].mdnshostname=mdnshostname;
-            parsedhosts.hosts[mac].ports=ports;
-            parsedhosts.hosts[mac].vendor=vendor;
-            parsedhosts.hosts[mac].scanning=0; //means the scanning is complete
-          }
+            parsedhosts.stats = {
+            'runstats': {...data.nmaprun.runstats[0].finished[0].p, ...data.nmaprun.p},
+            'hosts': data.nmaprun.runstats[0].hosts[0].p
+            }
+            parsedhosts.stats.runstats.portsprobed=portsprobed; //latest portsprobed value, shall be good enough.
+            //logger.debug(JSON.stringify(data.nmaprun.scaninfo,2));
+            return parsedhosts;
         }
-        parsedhosts.stats = {
-          'runstats': {...data.nmaprun.runstats[0].finished[0].p, ...data.nmaprun.p},
-          'hosts': data.nmaprun.runstats[0].hosts[0].p
+        catch (error) {
+            logger.error('parseScanResults: Error parsing scan results: ',error);
+            return {};
         }
-        parsedhosts.stats.runstats.portsprobed=portsprobed; //latest portsprobed value, shall be good enough.
-        //logger.debug(JSON.stringify(data.nmaprun.scaninfo,2));
-        return parsedhosts;
     };
 }
 

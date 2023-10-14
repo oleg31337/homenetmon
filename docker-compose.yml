@@ -7,5 +7,7 @@ services:
     volumes:
       - homenetmon-data:/data
     network_mode: host
+    environment:
+      - DEBUG=true
 volumes:
   homenetmon-data:

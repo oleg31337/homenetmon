@@ -186,19 +186,19 @@ function generateMenu(){ // build menu with accounts and regions
 
 function checkStatus(){ // check if it was the first run of the app.
   fetch("api/getsettings")
-    .catch((error)=>{})
-    .then(resp=>resp.json())
-    .then(settings=>{
-      //console.log('Check status: ', settings);
-      if (typeof(settings.firstrun)!='undefined' && settings.firstrun==1) {
-        //console.log ('first run');
-        setTimeout(function () { // delay before showing settings dialog
-          checkNmapStatus(function (state){
-            if (!state) settingsDialog(); //open settings dialog if nmap is not already running.
-          });
-        },500);
-      }
-    }).catch((error)=>{responseDialog(undefined,['Error','Application is not available']);});
+  .catch((error)=>{})
+  .then(resp=>resp.json())
+  .then(settings=>{
+    //console.log('Check status: ', settings);
+    if (typeof(settings.firstrun)!='undefined' && settings.firstrun==1) {
+      //console.log ('first run');
+      setTimeout(function () { // delay before showing settings dialog
+        checkNmapStatus(function (state){
+          if (!state) settingsDialog(); //open settings dialog if nmap is not already running.
+        });
+      },500);
+    }
+  }).catch((error)=>{responseDialog(undefined,['Error','Application is not available']);});
 }
 
 function refreshTable(){ //refresh table data
@@ -449,6 +449,11 @@ function requestUpdate(macaddr,ipaddr){
   .catch((error)=>{});
 }
 
+function confirmAbortScan(){
+  //console.log('confirmDelete');
+  confirmDialog("Abort scanning","Are you sure you want to abort current scan process?","requestRescan(null,'abort')");
+}
+
 function confirmDelete(macaddr,ipaddr){
   //console.log('confirmDelete');
   confirmDialog("Delete "+macaddr,"Are you sure you want to delete this host?","requestDelete('"+macaddr+"','"+ipaddr+"')");
@@ -477,7 +482,7 @@ function requestDelete(macaddr,ipaddr){
 
 function requestRescan(macaddr,ipaddr,options){
   //console.log('requestRescan');
-  if (ipaddr !='subnet'){
+  if (ipaddr !='subnet' && ipaddr !='abort'){
     document.getElementById(ipaddr).children[4].innerHTML='<div class="ui inline active inline loader"></div>&nbsp;&nbsp;&nbsp;Scanning is in progress'
     if (typeof (globalsetinterval[macaddr]) == 'number') {
       clearTimeout(globalsetinterval[macaddr]);
@@ -490,8 +495,12 @@ function requestRescan(macaddr,ipaddr,options){
   postData('api/netscan',{'ip':ipaddr,'options':options}).then (data => {
     ////console.log(data);
     if (typeof(data.msg) !='undefined'){
-      ////console.log(data.msg)
-      if (ipaddr =='subnet') responseDialog(data.msg,undefined);
+      //console.log(data.msg)
+      if (ipaddr =='subnet' || ipaddr =='abort') {
+        if (typeof(macaddr)=='string') refreshTable();
+        else checkNmapStatus();
+        responseDialog(data.msg,undefined);
+      }
     }
     else {
       responseDialog(undefined,data.err);
@@ -499,7 +508,9 @@ function requestRescan(macaddr,ipaddr,options){
       return;
     }
   }).catch((error)=>{responseDialog(undefined,['Error','Application is not available']);console.warn(error);});
-  if (ipaddr !='subnet') globalsetinterval[macaddr]=setTimeout(function(){ requestUpdate((macaddr.toString()),(ipaddr.toString())); }, 1000);
+  if (ipaddr !='subnet' && ipaddr !='abort') {
+    globalsetinterval[macaddr]=setTimeout(function(){ requestUpdate((macaddr.toString()),(ipaddr.toString())); }, 1000);
+  }
 }
 
 function confirmDialog(title,question,funct){ // confirmation dialog
@@ -509,8 +520,8 @@ function confirmDialog(title,question,funct){ // confirmation dialog
         <div class="ui header">'+title+'</div>\
         <div class="content">'+question+'</div>\
         <div class="ui actions">\
-          <div class="ui green ok button" onclick="'+funct+'">Yes</div>\
-          <div class="ui red deny button">Cancel</div>\
+          <div class="ui green approve button" onclick="'+funct+'">Yes</div>\
+          <div class="ui red cancel button" onclick="$(\'.ui.mini.modal\').modal(\'hide\');" >Cancel</div>\
         </div>';
     $('.ui.mini.modal').modal('setting', 'closable', true);
     $('.ui.mini.modal').modal('show');
@@ -523,15 +534,15 @@ function responseDialog(message,error){ // response and error dialog
     document.getElementById('modal_contents').innerHTML='\
     <h2 class="ui header"><i class="exclamation triangle icon"></i>'+error[0]+'</h2><div class="content">'+error[1]+'</div>\
     <div class="ui actions">\
-      <div class="ui green ok button">OK</div>\
+      <div class="ui green approve button">OK</div>\
     </div>';
   } else if (typeof message !== 'undefined') {
     document.getElementById('modal_contents').innerHTML='\
     <h2 class="ui header"><i class="thumbs up icon"></i>'+message[0]+'</h2><div class="content">'+message[1]+'</div>\
     <div class="ui actions">\
-      <div class="ui green ok button">OK</div>\
+      <div class="ui green approve button" onclick="$(\'.ui.mini.modal\').modal(\'hide\');">OK</div>\
     </div>';
-  }
+  } // onclick="$(\'.ui.mini.modal\').modal(\'hide\');"
   $('.ui.mini.modal').modal('setting', 'closable', true);
   $('.ui.mini.modal').modal('show');
 }
@@ -553,11 +564,11 @@ function displayScanStats(){ // show last scan stats
         <tr><td>Nmap command line</td><td>'+scanstats.runstats.args+'</td></tr>\
         </table>\
         <div class="actions" style="background-color:#4d4d4d; color:#f2f2f2">\
-            <div class="ui black deny right button">Close</div>\
+            <div class="ui black cancel right button" onclick="$(\'.ui.large.modal\').modal(\'hide\');">Close</div>\
         </div>';
       document.getElementById('modal_contents').innerHTML=contents;
     }).catch((error)=>{responseDialog(undefined,['Error','Application is not available']);});
-  document.getElementById('modal_contents').innerHTML=activedimmer+'</br><div class="actions"><div class="ui black deny right button">Close</div></div>;';
+  document.getElementById('modal_contents').innerHTML=activedimmer+'</br><div class="actions"><div class="ui black cancel right button" onclick="$(\'.ui.large.modal\').modal(\'hide\');">Close</div></div>;';
   $('.ui.large.modal').modal('setting', 'closable', true);
   $('.ui.large.modal').modal('show');
 }
@@ -635,13 +646,13 @@ function settingsDialog(){ // show settings dialog
               </div>\
               </div>\
             </div>';
-      console.log(settings.firstrun);
+      //console.log(settings.firstrun);
       if (typeof(settings.firstrun)!='undefined' && settings.firstrun==1) contents+='<input type="checkbox" hidden checked=true name="firstrun">'
       contents+='</form>\
         </div>\
         <div class="ui actions"  style="background-color:#4d4d4d; color:#f2f2f2">\
-          <div class="ui green button" onclick="submitForm()">Apply</div>\
-          <div class="ui red cancel button">Cancel</div>\
+          <div class="ui green approve button" onclick="submitForm()">Apply</div>\
+          <div class="ui red cancel button" onclick="$(\'.ui.tiny.modal\').modal(\'hide\');">Cancel</div>\
         </div>';
       document.getElementById('modal_contents').innerHTML=contents;
       activateSettingsForm();
@@ -652,7 +663,7 @@ function settingsDialog(){ // show settings dialog
       document.getElementById('input_cron').value=cronexpr;
       document.getElementById('checkbox_cron').checked=cronenable;
     }).catch((error)=>{responseDialog(undefined,['Error','Application is not available']);});
-  document.getElementById('modal_contents').innerHTML=activedimmer+'</br><div class="actions"><div class="ui black deny right button">Close</div></div>;';
+  document.getElementById('modal_contents').innerHTML=activedimmer+'</br><div class="actions"><div class="ui red cancel right button onclick="$(\'.ui.tiny.modal\').modal(\'hide\');"">Close</div></div>;';
   $('.ui.tiny.modal').modal('setting', 'closable', false);
   $('.ui.tiny.modal').modal('show');
 }
@@ -681,10 +692,12 @@ function activateSettingsForm() {
     }
     });
 }
+
 function submitForm(){
   //console.log('submitForm');
   $('.ui.form.segment').form('submit');
 }
+
 function loadHostsJSON(elem){
   var file=elem.files[0];
   var reader = new FileReader();
@@ -724,7 +737,7 @@ function importexportDialog(){ // show import/export dialog
       <div class="ui button" onclick="getElementById(\'input-file\').click()">JSON</div>\
     </div>\
     <div class="ui actions"  style="background-color:#4d4d4d; color:#f2f2f2">\
-      <div class="ui grey cancel button">Close</div>\
+      <div class="ui grey cancel button" onclick="$(\'.ui.tiny.modal\').modal(\'hide\');">Close</div>\
     </div>';
   document.getElementById('modal_contents').innerHTML=contents;
   //activateSettingsForm();
@@ -769,7 +782,20 @@ function convertHostsCSV(hosts){
   return csv;
 }
 
-function scanDialog(macaddr,ipaddr){ // show scan settings dialog
+function scanDialog(macaddr,ipaddr){
+  checkNmapStatus(function (status){
+    if (status) {
+      confirmAbortScan();
+      return;
+    }
+    else {
+      showScanDialog(macaddr,ipaddr);
+      return;
+    }
+  })
+}
+
+function showScanDialog(macaddr,ipaddr){ // show scan settings dialog
   document.getElementById('modal_contents').setAttribute("class", "ui tiny modal");
   document.getElementById('modal_contents').setAttribute("style", "background-color:#4d4d4d; color:#f2f2f2");
   var speed=getCookie('scanspeed') ? getCookie('scanspeed') : '5';
@@ -795,7 +821,7 @@ function scanDialog(macaddr,ipaddr){ // show scan settings dialog
             <div class="field">\
             <label style="color:#f2f2f2">Number of ports</label>\
             <select class="ui fluid dropdown" id="select_ports" name="ports">'
-  if (ipaddr=='subnet') contents+='<option value="0">Quick network swipe without port scan</option>'
+  if (ipaddr=='subnet') contents+='<option value="0">Quick network swipe with top 10 port scan</option>'
   contents+=' <option value="10">top 10 ports (fastest)</option>\
               <option value="100">top 100 ports (fastest)</option>\
               <option value="1000">top 1000 ports (fast)</option>\
@@ -810,9 +836,9 @@ function scanDialog(macaddr,ipaddr){ // show scan settings dialog
         </div>\
       </form>\
     </div>\
-    <div class="ui actions"  style="background-color:#4d4d4d; color:#f2f2f2">\
-      <div class="ui green button" onclick="submitScanForm()">Scan</div>\
-      <div class="ui red cancel button">Cancel</div>\
+    <div class="ui actions" style="background-color:#4d4d4d; color:#f2f2f2">\
+      <div class="ui green approve button" onclick="submitScanForm()">Scan</div>\
+      <div class="ui red cancel button" onclick="$(\'.ui.tiny.modal\').modal(\'hide\');">Cancel</div>\
     </div>';
   document.getElementById('modal_contents').innerHTML=contents;
   document.getElementById('select_speed').value=speed;

@@ -110,6 +110,8 @@ globalhosts.json
 globalhosts.bak.json
 globallastscan.json
 app-options.json
+nmap-output.xml
+nmap-output.json
 homenetmon.service
 /app-options.json
 *test*.js

@@ -3,7 +3,9 @@ import gw from 'default-gateway';
 import ip from 'ip';
 import os from 'os';
 import fs from 'fs';
+import path from 'path';
 import { exec } from "child_process";
+import { spawn } from "child_process";
 import { parseString } from 'xml2js';
 import { createRequire } from 'module'; // only needed for dnssd2 as it is outdated
 import appLogger from './applogger.mjs'; //logging class
@@ -111,29 +113,64 @@ class netScanner{
 
     async #nmapRun(nmapcmd){
         return new Promise((resolve, reject) => {
-            this.#nmapruntime = exec(nmapcmd, {maxBuffer: 20971520, timeout: 86400000}, (error, stdout, stderr) => {
-                if (error) {
-                    logger.error('nmapRun: nmap execution error: '+error.message);
-                    reject (error);
-                }
-                if (stderr) {
-                    logger.error('nmapRun: nmap execution error: '+stderr);
-                    reject (stderr);
-                }
-                parseString(stdout,{attrkey:'p',charkey:'t'}, (err, result)=>{
-                    if (err) {
-                        logger.error("nmapRun: Error converting nmap results to JSON: "+err);
-                        logger.debug('nmap XML output content:\n', stdout);
-                        reject(err);
-                    }
-                    logger.debug('nmapRun: nmap scan finished.');
-                    resolve(result);
-                });
+            const [command, ...args] = nmapcmd.split(' ');
+            this.#nmapruntime = spawn(command, args, { shell: false });
+    
+            let stdout = '';
+            let stderr = '';
+            
+            const timeout = setTimeout(() => {
+                this.#nmapruntime.kill('SIGTERM');
+                this.#nmapruntime.kill('SIGKILL');
+                reject(new Error('nmapRun: nmap execution timed out'));
+            }, 86400000); // 24 hours
+
+            this.#nmapruntime.stdout.on('data', (data) => {
+                stdout += data;
+                console.log(data.toString());
             });
-            logger.debug('nmapRun: nmap started with pid: '+this.#nmapruntime.pid);
+    
+            this.#nmapruntime.stderr.on('data', (data) => {
+                stderr += data;
+                console.error(data.toString());
+            });
+    
+            this.#nmapruntime.on('error', (error) => {
+                clearTimeout(timeout);
+                logger.error('nmapRun: !!!! nmap execution error: ' + error.message);
+                reject(error);
+            });
+    
+            this.#nmapruntime.on('exit', (code) => {
+                clearTimeout(timeout);
+                if (code !== 0) {
+                    if (code == null || code == 143 || code == 137 || code == 130) {
+                        logger.debug('nmapRun: nmap was killed');
+                        reject('nmap was killed');
+                    }
+                    else {
+                        logger.error(`nmapRun: nmap exit code: ${code}, error: ` + stderr);
+                        reject(new Error(stderr));
+                    }
+                } else {
+                    if (process.env.DEBUG === 'true') fs.writeFileSync(path.join(process.env.DATA_PATH || '', 'nmap-output.xml'),stdout.toString());
+                    parseString(stdout, {attrkey:'p',charkey:'t'}, (err, result) => {
+                        if (err) {
+                            logger.error("nmapRun: Error converting nmap results to JSON: " + err);
+                            logger.debug('nmap XML output content:\n', stdout);
+                            reject(err);
+                        } else {
+                            if (process.env.DEBUG === 'true') fs.writeFileSync(path.join(process.env.DATA_PATH || '', 'nmap-output.json'),JSON.stringify(result,null,2));
+                            logger.debug('nmapRun: nmap scan finished.');
+                            resolve(result);
+                        }
+                    });
+                }
+            });
+            logger.debug('nmapRun: nmap started with pid: ' + this.#nmapruntime.pid);
         });
     }
-
+    
     async portScan(ipaddr,type,opts){ //Function to perform port scanning. Parameters: ip,type('portscan'|'discovery'). Callback parameters: ip, parsedhosts_obj, err
         return new Promise((resolve, reject) => {
             var scanscope='host'; // single host scope by default
@@ -175,7 +212,9 @@ class netScanner{
                     logger.log(`portScan: scanning of ${ipaddr} is complete`);
                     resolve(parsedhosts);
                 }).catch(err => {
-                    logger.error(`portScan: Error during scanning ${ipaddr}`, err);
+                    //console.log(JSON.stringify(err));
+                    if (err.toString() == 'nmap was killed') logger.error('portScan: scanning was aborted');
+                    else logger.error(`portScan: Error during scanning ${ipaddr}`, err);
                     reject(err);
                 });
             }
@@ -186,17 +225,21 @@ class netScanner{
     };
     
     async abortScan(){ //abort running scan
-        try{
-            if (this.isScanning()){
-                this.#nmapruntime.kill('SIGINT');
-                return true;
+        return new Promise((resolve, reject) => {
+            try{
+                if (this.isScanning()){
+                    logger.debug('abortScan: Killing nmap pid:'+this.#nmapruntime.pid);
+                    this.#nmapruntime.kill('SIGTERM');
+                    this.#nmapruntime.kill('SIGKILL');
+                    resolve(true);
+                }
+                else resolve(false);
             }
-            else return false;
-        }
-        catch (e){
-            logger.error('abortScan: Error aborting nmap job:',e);
-            return false;
-        }
+            catch (e){
+                logger.error('abortScan: Error aborting nmap job:',e);
+                reject(e);
+            }
+        });
     }
     
     getLocalIPs(){ // Function to get local IP addressese and corresponding MAC addresses and update global variables.
@@ -228,6 +271,7 @@ class netScanner{
         logger.debug('Local MACs: '+this.localmac);
         logger.debug('Local subnets: '+this.localsubnet);
     }
+
     async mdnsScan (scantime = 5000) {
         return new Promise ((resolve,reject) => {
             const services = [];

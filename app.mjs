@@ -134,47 +134,61 @@ app.post('/api/netscan', (req, res, next) => { // Network scan endpoint. Paramet
   if (typeof(req.body.ip) != undefined){
     
     const isscanning = netscan.isScanning();
-    if (isscanning && typeof(req.body.ip) != 'undefined' && req.body.ip == 'abort') { //abort mechanism
+    if (isscanning && req.body.ip == 'abort') { //abort mechanism
       logger.log('api/netscan: aborting scan by request');
-      netscan.abortScan();
-      return res.status(200).type('application/json').send('{"msg":["Aborted","Network scan was aborted"]}').end;
+      netscan.abortScan().then((state)=>{
+        if (state) return res.status(200).type('application/json').send('{"msg":["Aborted","Network scan was aborted"]}').end;
+        else return res.status(200).type('application/json').send('{"err":["Error","Network scan was not running"]}').end;
+      }).catch(()=>{
+        return res.status(200).type('application/json').send('{"err":["Error","Error stopping network scan"]}').end;
+      });
     }
-    else if (typeof(req.body.ip) != 'undefined' && req.body.ip == 'abort') {
+    else if (req.body.ip == 'abort') {
       return res.status(200).type('application/json').send('{"err":["Error","Network scan was not running"]}').end;
     }
-
-    if (!isscanning) {
-      netscan.portScan(req.body.ip, req.body.type, req.body.options).then((results)=>{
-        logger.log('api/netscan: scan complete');
-        if (typeof(results.hosts) != 'undefined' && results.hosts != {} && Object.keys(results.hosts).length > 0){
-          if (Object.keys(results.hosts).length == 1) {//single host scan
-            const mac = Object.keys(results.hosts)[0];
-            hostdb.setHost(mac,results.hosts[mac]);
-            hostdb.setStats(results.stats);
+    else {
+      if (!isscanning) {
+        netscan.portScan(req.body.ip, req.body.type, req.body.options).then((results)=>{
+          logger.log('api/netscan: scan complete');
+          if (typeof(results.hosts) != 'undefined' && results.hosts != {} && Object.keys(results.hosts).length > 0){
+            if (Object.keys(results.hosts).length == 1) {//single host scan
+              const mac = Object.keys(results.hosts)[0];
+              hostdb.setHost(mac,results.hosts[mac]);
+              hostdb.setStats(results.stats);
+            }
+            else {
+              hostdb.setAllhosts(results.hosts);
+              hostdb.setStats(results.stats);
+            }
           }
-          else {
-            hostdb.setAllhosts(results.hosts);
-            hostdb.setStats(results.stats);
+        }).catch((err)=>{
+          if (err.toString() == 'nmap was killed') logger.debug('api/netscan: scanning was aborted');
+          else logger.error('api/netscan: error running port scan', err);
+          if (utils.validateIPaddress(req.body.ip)) {
+            hostdb.getmac(req.body.ip).then((mac)=>{
+              if (mac != null) hostdb.set(mac,'scanning', 0); // if found in arp table reset host scanning state
+            });
           }
+        });
+        if (req.body.ip=='subnet' || utils.validateIPsubnet(req.body.ip)){
+          return res.status(200).type('application/json').send('{"msg":["Subnet scan started","It will take some time to complete"]}').end;
         }
-      });
-      if (req.body.ip=='subnet' || utils.validateIPsubnet(req.body.ip)){
-        return res.status(200).type('application/json').send('{"msg":["Subnet scan started","It will take some time to complete"]}').end;
+        else {
+          hostdb.getmac(req.body.ip).then((mac)=>{
+            if (mac != null) hostdb.set(mac,'scanning', 1); // if found in arp table set host to scanning mode
+          });
+          return res.status(200).type('application/json').send('{"msg":["Host scan started","It will take some time to complete"]}').end;
+        }
       }
       else {
-        hostdb.getmac(req.body.ip).then((mac)=>{
-          if (mac != null) hostdb.set(mac,'scanning', 1); // if found in arp table set host to scanning mode
-        });
-        return res.status(200).type('application/json').send('{"msg":["Host scan started","It will take some time to complete"]}').end;
+        return res.status(200).type('application/json').send('{"err":["Busy","Another network scan is in progress.</br>Please wait a few moments until it is done."]}').end;
       }
-    }
-    else {
-      return res.status(200).type('application/json').send('{"err":["Busy","Another network scan is in progress.</br>Please wait a few moments until it is done."]}').end;
     }
   }
   else {
     return res.status(200).type('application/json').send('{"err":"["Error","Missing ip information"]"}').end;
   }
+
 });  
 
 app.get('/api/getnmaprun', (req, res, next) => { // Check nmap running endpoint. Output: msg_ok/err_busy
@@ -281,6 +295,45 @@ app.post('/api/savesettings', (req, res, next) => { // Save settings endpoint. P
   catch (err){
     logger.error('api/savesettings:',err);
     res.redirect('/');
+  }
+});
+
+app.post('/api/importhostsjson', (req, res, next) => { // Save settings endpoint. Parameters: settings_objec
+  //console.log(typeof(req.body));
+  //console.log(req.body);
+  if (typeof(req.body)=='object'){
+    let hosts=req.body;
+    logger.log('/api/importhostsjson: Importing hosts data');
+    //console.log(hosts);
+    var data_is_valid=true;
+    if (Object.keys(hosts).length >1){ // validating the data
+      for (var i=0; i<Object.keys(hosts).length; i++){
+        var host=hosts[Object.keys(hosts)[i]];
+        //console.log(host);
+        try {
+          if (!host.ipaddr || !host.mac || Object.keys(hosts)[i].toLowerCase() != host.mac.toLowerCase()) data_is_valid=false;
+          delete hosts[Object.keys(hosts)[i]].scanning;
+        }
+        catch {
+          data_is_valid=false;
+        }
+      }
+    }
+    else data_is_valid=false;
+    if (data_is_valid){
+      hostdb.setAllhosts(hosts).then(state=>{
+        if (state==null) return res.status(200).type('application/json').send('{"msg":["Success","Hosts file imported successfully"]}').end;
+        else return res.status(200).type('application/json').send('{"err":["Error","Error importing hosts. Check app logs."]}').end;
+      });
+    }
+    else {
+      logger.error('Error importing hosts data. Data is invalid');
+      return res.status(200).type('application/json').send('{"err":["Error","Hosts file is invalid"]}').end;
+    }
+  }
+  else {
+    logger.error('Error importing hosts data. Data is empty');
+    return res.status(200).type('application/json').send('{"err":["Error","Hosts file is invalid"]}').end;
   }
 });
 

@@ -1,13 +1,30 @@
-version: '3'
 services:
   homenetmon:
     container_name: homenetmon
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+      tags:
+        - "homenetmon:latest"
     restart: unless-stopped
+    cap_add: ["ALL"]
     volumes:
       - homenetmon-data:/data
     network_mode: host
     environment:
       - DEBUG=true
+      - DATA_PATH=/data
+
+  redis:
+    image: redis:latest
+    container_name: homenetmon-redis
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - homenetmon-data:/data
+    command: redis-server --save 60 1 --port 30451 --dbfilename redis.rdb --dir /data
+    ports:
+      - "127.0.0.1:30451:30451"
+
 volumes:
   homenetmon-data:

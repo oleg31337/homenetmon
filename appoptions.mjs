@@ -20,7 +20,7 @@ class appOptions {
         NPING_CMD: "/usr/bin/nping --privileged --arp -c10 --rate=100",
         NMAP_CRON: "30 03 * * *",// default full scan schedule at 3:30am
         NMAP_CRON_ENABLE: 0, //disable scheduled scanning by default
-        REDIS_URL: "redis://localhost:30451", // non-standard redis port, this is for docker container to run on host network
+        REDIS_URL: "redis://127.0.0.1:30451", // non-standard redis port, this is for docker container to run on host network
         KEEP_STATS_HISTORY: 30, //keep 30 days of scan stats history by default
         FIRST_RUN: 1 //first run indicator, will show settings menu in browser on the first start
     };

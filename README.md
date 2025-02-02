@@ -1,6 +1,6 @@
 # homenetmon
 ## Home network scanner and monitor dashboard
-Full stack Node.js/JavaScript application that scans local network and shows your devices in a compact and simple way.
+Full stack Node.js/JavaScript application that scans local network using nmap and shows your devices in a compact and simple way.
 
 ## Features
  * Automatic scheduled nmap scan
@@ -12,7 +12,7 @@ Full stack Node.js/JavaScript application that scans local network and shows you
 
 ## Installation
 Currently only Linux operating systems are supported.
-1. Install node.js version 14 to 20 (So far tested on versions 14, 16 and 20) https://nodejs.org/en/download/package-manager/
+1. Install node.js version 20 (So far tested on versions 14, 16 and 20) https://nodejs.org/en/download/package-manager/
 2. Install nmap from your Linux package repository (e.g., `apt -y install nmap`)
 3. Install nping from your Linux package repository if it is not already provided by the nmap package (e.g., `apt -y install nping`)
    **Note:** It is better to download latest version of nmap and nping from the official web site: https://nmap.org/
@@ -76,25 +76,39 @@ By default all logs are printed to stdout. When app is running as a systemd serv
 ## Docker support
  * Docker image is supplied with this tag: oleg31337/homenetmon
  * App supports persistent storage, mount the /data folder from inside the container to keep application options and hosts database.
- * Docker image already has Redis database inside, so you don't need to deploy it.
- * Docker compose file that is included in this repository is for development purposes only, please do not use.
- * There are some limitations to the way how Docker is handling network packets, so we are forced to use 'host' network of the Docker host which can potentially create TCP ports conflict and impose security issues.
+ * Docker compose file that is included in this repository can be used to build and run the application with 'docker compose up' command
+ * Docker compose will run a redis container that will mount the same /data volume
+ * There are some limitations to the way how Docker is handling network packets, so we are forced to use 'host' network of the Docker host which can potentially create TCP ports conflict and impose security issues. Note that this will not work in Docker desktop for Windows or WSL.
  * Application will bind to the port 30450 of the Docker host, you will be able to access it with your web browser.
- * To run the docker container you can use the following docker command:
-`docker run -d -v homenetmon:/data --restart=unless-stopped --name homenetmon --network=host oleg31337/homenetmon:latest`
  * You can also use the following Docker compose docker-compose.yml to run the app:
 ```yaml
-version: '3'
+---
+
 services:
   homenetmon:
     container_name: homenetmon
-    image oleg31337/homenetmon
+    image: oleg31337/homenetmon:latest
     restart: unless-stopped
+    cap_add: ["ALL"]
     volumes:
       - homenetmon-data:/data
     network_mode: host
+    environment:
+      - DEBUG=true
+      - DATA_PATH=/data
+  redis:
+    image: redis:latest
+    container_name: homenetmon-redis
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - homenetmon-data:/data
+    command: redis-server --save 60 1 --port 30451 --dbfilename redis.rdb --dir /data
+    ports:
+      - "127.0.0.1:30451:30451"
 volumes:
   homenetmon-data:
+  
 ```
 
 ## This application is not intended for business or professional use. Its main purpose is to monitor your home network, so no implicit or explicit guarantees are provided for functionality or security. It was not designed with security or stability in mind. Please read LICENSE file for more information regarding responsibilities.

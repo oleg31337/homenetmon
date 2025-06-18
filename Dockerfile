@@ -1,5 +1,5 @@
-FROM node:20-alpine
-LABEL version="2.0"
+FROM node:24-alpine
+LABEL version="2.1"
 USER root
 WORKDIR /app
 

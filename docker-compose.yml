@@ -15,11 +15,11 @@ services:
       - DEBUG=true
       - DATA_PATH=/data
 
-  redis:
+  homenetmon-redis:
     image: redis:latest
     container_name: homenetmon-redis
     restart: unless-stopped
-    network_mode: host
+    #network_mode: host
     volumes:
       - homenetmon-data:/data
     command: redis-server --save 60 1 --port 30451 --dbfilename redis.rdb --dir /data
